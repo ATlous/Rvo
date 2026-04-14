@@ -136,7 +136,6 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
         peos:[],
         random_peos:42, // 人口随机数
         exits:[],
-        connectors:[],
         ks:[],  // 人口密度统计框
 
         // 2D 构建仅针对单层；用 store 保存所有楼层数据
@@ -204,7 +203,6 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           rooms:[],
           peos:[],
           exits:[],
-          connectors:[],
           pointsNav:[],
           pointsNavView:[],
           ks:[],
@@ -224,11 +222,14 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           floorHeight:150,
           floorFilter:'all',
           onlyCurrentFloor:false,
+          teleportDurationMs:2000,
+          occlusionGrayPerLayer:0.25,
+          occlusionGrayMax:0.9,
           replayAgentStyle:'cylinder',
           agentVisualConfig:{
             cylinder:{
-              radius:0.5,
-              height:3.6,
+              radius:2,
+              height:6,
               radialSegments:10
             },
             capsule:{
@@ -244,21 +245,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
         },
         scaleLabel:'--',
         zoomLabel:'1.0x',
-        dialogVisible_connector:false,
-        connectorEdit:{
-          active:false,
-          isNew:true,
-          id:0,
-          type:1,
-          fromFloor:0,
-          toFloor:1,
-          entryX:0,
-          entryY:0,
-          exitX:0,
-          exitY:0,
-          capacity:1,
-          serviceTime:5
-        },
+
 
         heatmapInstance:null,
         d:null,
@@ -335,7 +322,6 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
         ],
 
         simulateConfig:[
-          {argument:"集合点剂量率阈值(mSv)",weight:20},
           {argument:"集合点数量最小值",weight:1},
           {argument:"集合点数量最大值",weight:2},
         ],
@@ -427,7 +413,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           dat:'',
           dialogVisible_2:false,
           dialogVisible_3:false,
-          dialogVisible_6:false,
+
           dialogVisible_7:false,
           dialogVisible_8:false,
           dialogVisible_9:false,//选定框
@@ -588,14 +574,14 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
       //   this.simulateConfig = res.data.data.simulateConfig;
       //   if(this.simulateConfig == null || this.simulateConfig.length != 3){
       //     this.simulateConfig = [
-      //       {argument:"集合点剂量率阈值(mSv)",weight:Number(10)},
+      //       {argument:"集合点数量最小值",weight:Number(1)},
       //       {argument:"集合点数量最小值",weight:Number(1)},
       //       {argument:"集合点数量最大值",weight:Number(1)},
       //     ];
       //   }
-      //   if(this.simulateConfig[0].argument === "集合点剂量阈值(mSv)"){
+      //   if(this.simulateConfig[0].argument === "集合点数量最小值"){
       //     this.simulateConfig = [
-      //       {argument:"集合点剂量率阈值(mSv)",weight:Number(10)},
+      //       {argument:"集合点数量最小值",weight:Number(1)},
       //       {argument:"集合点数量最小值",weight:Number(1)},
       //       {argument:"集合点数量最大值",weight:Number(1)},
       //     ];
@@ -988,7 +974,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
       this.pointsNav = res.data.data.pointsNav;//导航点
       this.pointsNavView= res.data.data.pointsNavView;//导航点
       this.exits= res.data.data.exits;//门点
-      this.connectors = Array.isArray(res.data.data.connectors) ? res.data.data.connectors : [];
+
       this.numberOptions = res.data.data.numberOptions;//门点
 
      // 如果集合点确实peoNum添加上
@@ -1013,16 +999,14 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
             this.viewInfo= res.data.data.viewInfo;
             this.drawConfig= res.data.data.drawConfig;
             this.simulateConfig = res.data.data.simulateConfig;
-            if(this.simulateConfig == null || this.simulateConfig.length != 3){
+            if(this.simulateConfig == null || this.simulateConfig.length != 2){
               this.simulateConfig = [
-                {argument:"集合点剂量率阈值(mSv)",weight:10},
                 {argument:"集合点数量最小值",weight:1},
                 {argument:"集合点数量最大值",weight:2},
               ];
             }
-            if(this.simulateConfig[0].argument === "集合点剂量阈值(mSv)"){
+            if(this.simulateConfig[0].argument !== "集合点数量最小值" || this.simulateConfig[1].argument !== "集合点数量最大值"){
               this.simulateConfig = [
-                {argument:"集合点剂量率阈值(mSv)",weight:10},
                 {argument:"集合点数量最小值",weight:1},
                 {argument:"集合点数量最大值",weight:2},
               ];
@@ -1428,11 +1412,6 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
         (this.exits || []).forEach((e) => ensure(e, 'floorId'));
         (this.ks || []).forEach((k) => ensure(k, 'floorId'));
         (this.pointsNav || []).forEach((p) => ensure(p, 'floorId'));
-        (this.connectors || []).forEach((c) => {
-          if (!c || typeof c !== 'object') return;
-          c.fromFloor = Number(c.fromFloor ?? 0);
-          c.toFloor = Number(c.toFloor ?? 0);
-        });
       },
       initFloorStoreFromCurrentArrays(){
         this.ensureFloorIdsOnLoadedData();
@@ -1443,7 +1422,6 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
         (this.peos || []).forEach((g) => floors.add(Number(g.floorId ?? 0)));
         (this.ks || []).forEach((k) => floors.add(Number(k.floorId ?? 0)));
         (this.pointsNav || []).forEach((p) => floors.add(Number(p.floorId ?? 0)));
-        (this.connectors || []).forEach((c) => { floors.add(Number(c.fromFloor ?? 0)); floors.add(Number(c.toFloor ?? 0)); });
 
         const floorList = this.sortFloorIds(Array.from(floors));
         const store = {};
@@ -1669,7 +1647,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
         const cfg = this.view3D && this.view3D.agentVisualConfig ? this.view3D.agentVisualConfig : null;
         if (!cfg || !cfg.cylinder) return;
         cfg.cylinder.radius = Math.min(2, Math.max(0.05, Number(cfg.cylinder.radius) || 0.18));
-        cfg.cylinder.height = Math.min(5, Math.max(0.1, Number(cfg.cylinder.height) || 0.8));
+        cfg.cylinder.height = Math.min(6, Math.max(0.1, Number(cfg.cylinder.height) || 0.8));
         cfg.cylinder.radialSegments = Math.min(32, Math.max(3, Math.round(Number(cfg.cylinder.radialSegments) || 10)));
         this.applyThreeAgentStyle(true);
       },
@@ -1701,7 +1679,9 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
             mapWidth,
             mapHeight,
             agentStyle: this.resolveThreeAgentStyle(),
-            agentVisualConfig: this.view3D.agentVisualConfig
+            agentVisualConfig: this.view3D.agentVisualConfig,
+            occlusionGrayPerLayer: this.view3D.occlusionGrayPerLayer,
+            occlusionGrayMax: this.view3D.occlusionGrayMax
           });
           this.threeViewer.onZoomChange = (zoom) => {
             this.zoomLabel = `${zoom.toFixed(2)}x`;
@@ -1709,6 +1689,8 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           this.threeViewer.init(container);
           this.$nextTick(() => this.applyFloorFilter());
         } else {
+          this.threeViewer.occlusionGrayPerLayer = Number(this.view3D.occlusionGrayPerLayer) || 0.15;
+          this.threeViewer.occlusionGrayMax = Number(this.view3D.occlusionGrayMax) || 0.9;
           this.threeViewer.resize();
           this.applyThreeAgentStyle(false);
         }
@@ -1726,13 +1708,18 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
         // 3D 展示需要全楼层数据
         const all = (this.floor2D && this.floor2D.initialized) ? this.getAllFloorsSnapshot() : {
           rooms: (Array.isArray(this.rooms) ? this.rooms : []),
-          exits: (Array.isArray(this.exits) ? this.exits : [])
+          exits: (Array.isArray(this.exits) ? this.exits : []),
+          peos: (Array.isArray(this.peos) ? this.peos : [])
         };
-        const connectors = Array.isArray(this.connectors) ? this.connectors : [];
         this.threeViewer.setStaticScene({
           rooms: Array.isArray(all.rooms) ? all.rooms : [],
           exits: Array.isArray(all.exits) ? all.exits : [],
-          connectors
+          peos: Array.isArray(all.peos) ? all.peos : []
+        });
+        this.rebuildReplay3DIndex({
+          rooms: Array.isArray(all.rooms) ? all.rooms : [],
+          exits: Array.isArray(all.exits) ? all.exits : [],
+          peos: Array.isArray(all.peos) ? all.peos : []
         });
       },
       syncThreeReplayFrame(agents) {
@@ -1740,12 +1727,349 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           return;
         }
         this.threeViewer.setAgentStyle(this.resolveThreeAgentStyle());
-        this.threeViewer.updateAgents(agents.map((agent) => ({
-          id: agent.id,
-          x: agent.x,
-          y: agent.y,
-          floorId: agent.floorId || 0
-        })));
+        if (!this.replay3D || !this.replay3D.ready) {
+          const all = (this.floor2D && this.floor2D.initialized) ? this.getAllFloorsSnapshot() : {
+            rooms: (Array.isArray(this.rooms) ? this.rooms : []),
+            exits: (Array.isArray(this.exits) ? this.exits : []),
+            peos: (Array.isArray(this.peos) ? this.peos : [])
+          };
+          this.rebuildReplay3DIndex({
+            rooms: Array.isArray(all.rooms) ? all.rooms : [],
+            exits: Array.isArray(all.exits) ? all.exits : [],
+            peos: Array.isArray(all.peos) ? all.peos : []
+          });
+        }
+        const state = this.replay3D;
+        const mapped = agents.map((agent) => {
+          const id = Number(agent && agent.id);
+          const x = Number(agent && agent.x);
+          const y = Number(agent && agent.y);
+          if (!Number.isFinite(id)) return null;
+          const prev = state && state.prevById ? state.prevById.get(id) : null;
+          const prevFloor = prev && Number.isFinite(prev.floorId) ? prev.floorId : null;
+          const providedFloor = Number(agent && agent.floorId);
+          const floorId = Number.isFinite(providedFloor) ? providedFloor : this.inferReplayAgentFloorId(x, y, prevFloor);
+          const next = { x, y, floorId };
+          const teleport = prev ? this.detectReplayTeleport(prev, next) : null;
+          if (state && state.prevById) {
+            state.prevById.set(id, next);
+          }
+          return {
+            id,
+            x,
+            y,
+            floorId,
+            teleport: teleport ? {
+              x: teleport.x,
+              y: teleport.y,
+              floorId: teleport.floorId,
+              durationMs: teleport.durationMs
+            } : undefined
+          };
+        }).filter(Boolean);
+        this.threeViewer.updateAgents(mapped);
+      },
+      rebuildReplay3DIndex(input = {}) {
+        const rooms = Array.isArray(input.rooms) ? input.rooms : [];
+        const exits = Array.isArray(input.exits) ? input.exits : [];
+        const peos = Array.isArray(input.peos) ? input.peos : [];
+
+        this.replay3D = this.replay3D || {};
+        this.replay3D.ready = false;
+        this.replay3D.prevById = this.replay3D.prevById instanceof Map ? this.replay3D.prevById : new Map();
+        this.replay3D.roomsByFloor = new Map();
+        this.replay3D.peopleAreasByFloor = new Map();
+        this.replay3D.exits = [];
+        this.replay3D.exitsByFloorNum = new Map();
+        this.replay3D.teleportLinks = [];
+        this.replay3D.connectors = [];
+
+        const addExitIndex = (floorId, num, exit) => {
+          const f = Number(floorId);
+          const n = Number(num);
+          if (!Number.isFinite(f) || !Number.isFinite(n)) return;
+          if (!this.replay3D.exitsByFloorNum.has(f)) {
+            this.replay3D.exitsByFloorNum.set(f, new Map());
+          }
+          this.replay3D.exitsByFloorNum.get(f).set(n, exit);
+        };
+
+        const roomRidToFloor = new Map();
+        rooms.forEach((room) => {
+          if (!room || !Array.isArray(room.walls)) return;
+          const floorId = Number(room.floorId ?? 0);
+          if (Number.isFinite(Number(room.rid))) {
+            roomRidToFloor.set(Number(room.rid), floorId);
+          }
+          const pts = this.extractReplayPolygon(room.walls);
+          if (pts.length < 3) return;
+          const bbox = this.computeReplayBBox(pts);
+          if (!this.replay3D.roomsByFloor.has(floorId)) this.replay3D.roomsByFloor.set(floorId, []);
+          this.replay3D.roomsByFloor.get(floorId).push({ points: pts, bbox });
+        });
+
+        peos.forEach((group) => {
+          if (!group || !Array.isArray(group.walls)) return;
+          let floorId = Number(group.floorId);
+          if (!Number.isFinite(floorId)) {
+            const rid = Number(group.rid);
+            if (Number.isFinite(rid) && roomRidToFloor.has(rid)) {
+              floorId = roomRidToFloor.get(rid);
+            } else {
+              floorId = 0;
+            }
+          }
+          const pts = this.extractReplayPolygon(group.walls);
+          if (pts.length < 3) return;
+          const bbox = this.computeReplayBBox(pts);
+          if (!this.replay3D.peopleAreasByFloor.has(floorId)) this.replay3D.peopleAreasByFloor.set(floorId, []);
+          this.replay3D.peopleAreasByFloor.get(floorId).push({ points: pts, bbox });
+        });
+
+        exits.forEach((exit) => {
+          if (!exit) return;
+          const floorId = Number(exit.floorId ?? 0);
+          const parsed = this.parseExitId(exit.id);
+          const num = Number(parsed.num);
+          const teleportTarget = parsed.teleportTarget ? String(parsed.teleportTarget) : '';
+          const xs = [exit.x0, exit.x1, exit.x2, exit.x3].map((v) => Number(v)).filter((v) => Number.isFinite(v));
+          const ys = [exit.y0, exit.y1, exit.y2, exit.y3].map((v) => Number(v)).filter((v) => Number.isFinite(v));
+          if (xs.length < 2 || ys.length < 2) return;
+          const minX = Math.min.apply(null, xs);
+          const maxX = Math.max.apply(null, xs);
+          const minZ = Math.min.apply(null, ys);
+          const maxZ = Math.max.apply(null, ys);
+          const centerX = (minX + maxX) / 2;
+          const centerZ = (minZ + maxZ) / 2;
+          const radius = Math.max((maxX - minX), (maxZ - minZ)) / 2 + 1;
+          const info = {
+            floorId,
+            num,
+            teleportTarget,
+            bbox: { minX, maxX, minZ, maxZ },
+            center: { x: centerX, z: centerZ },
+            radius
+          };
+          this.replay3D.exits.push(info);
+          addExitIndex(floorId, num, info);
+        });
+
+        this.replay3D.exits.forEach((from) => {
+          const fromFloor = Number(from.floorId);
+          if (!Number.isFinite(fromFloor) || fromFloor === 0) return;
+          if (!from.teleportTarget) return;
+
+          const targetFloor = fromFloor > 0 ? (fromFloor - 1) : (fromFloor + 1);
+          const targetNum = Number(from.teleportTarget) || Number(from.num);
+          if (!Number.isFinite(targetNum)) return;
+
+          const byFloor = this.replay3D.exitsByFloorNum.get(targetFloor);
+          const to = byFloor ? byFloor.get(targetNum) : null;
+          if (!to) return;
+
+          this.replay3D.teleportLinks.push({
+            from,
+            to,
+            radius: Math.max(from.radius, to.radius, 2),
+            durationMs: Number(this.view3D && this.view3D.teleportDurationMs) || 350
+          });
+        });
+
+        this.replay3D.ready = true;
+      },
+      computeReplayBBox(points) {
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        points.forEach((p) => {
+          minX = Math.min(minX, p.x);
+          maxX = Math.max(maxX, p.x);
+          minZ = Math.min(minZ, p.z);
+          maxZ = Math.max(maxZ, p.z);
+        });
+        return { minX, maxX, minZ, maxZ };
+      },
+      extractReplayPolygon(rawWalls) {
+        const segments = [];
+        let current = [];
+        const pushCurrent = () => {
+          if (current.length >= 3) segments.push(current);
+          current = [];
+        };
+        (Array.isArray(rawWalls) ? rawWalls : []).forEach((p) => {
+          if (!p) return;
+          const x = Number(p.x);
+          const z = Number(p.y);
+          if (!Number.isFinite(x) || !Number.isFinite(z) || x === -10000 || z === -10000) {
+            pushCurrent();
+            return;
+          }
+          const last = current[current.length - 1];
+          if (last && Math.abs(last.x - x) < 1e-6 && Math.abs(last.z - z) < 1e-6) return;
+          current.push({ x, z });
+        });
+        pushCurrent();
+        if (segments.length === 0) return [];
+        let pts = segments[0];
+        for (let i = 1; i < segments.length; i++) {
+          if (segments[i].length > pts.length) pts = segments[i];
+        }
+        if (pts.length >= 2) {
+          const first = pts[0];
+          const last = pts[pts.length - 1];
+          if (Math.abs(first.x - last.x) < 1e-6 && Math.abs(first.z - last.z) < 1e-6) {
+            pts = pts.slice(0, pts.length - 1);
+          }
+        }
+        return pts;
+      },
+      pointInReplayPolygon(x, z, pts) {
+        let inside = false;
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+          const xi = pts[i].x;
+          const zi = pts[i].z;
+          const xj = pts[j].x;
+          const zj = pts[j].z;
+          const intersect = ((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi + 0.0) + xi);
+          if (intersect) inside = !inside;
+        }
+        return inside;
+      },
+      inferReplayAgentFloorId(x, y, prevFloorId) {
+        const state = this.replay3D;
+        if (!state || !state.ready) return Number(prevFloorId) || 0;
+        const px = Number(x);
+        const pz = Number(y);
+        const prevFloor = Number(prevFloorId);
+
+        const pointInExit = (exit) => {
+          if (!exit || !exit.bbox) return false;
+          const b = exit.bbox;
+          return px >= b.minX && px <= b.maxX && pz >= b.minZ && pz <= b.maxZ;
+        };
+
+        if (Number.isFinite(prevFloor)) {
+          const exits = state.exits.filter((e) => Number(e.floorId) === prevFloor);
+          if (exits.some(pointInExit)) return prevFloor;
+          const peopleAreas = state.peopleAreasByFloor ? (state.peopleAreasByFloor.get(prevFloor) || []) : [];
+          for (let i = 0; i < peopleAreas.length; i++) {
+            const r = peopleAreas[i];
+            const b = r.bbox;
+            if (px < b.minX || px > b.maxX || pz < b.minZ || pz > b.maxZ) continue;
+            if (this.pointInReplayPolygon(px, pz, r.points)) return prevFloor;
+          }
+          const rooms = state.roomsByFloor.get(prevFloor) || [];
+          for (let i = 0; i < rooms.length; i++) {
+            const r = rooms[i];
+            const b = r.bbox;
+            if (px < b.minX || px > b.maxX || pz < b.minZ || pz > b.maxZ) continue;
+            if (this.pointInReplayPolygon(px, pz, r.points)) return prevFloor;
+          }
+        }
+
+        const exitMatches = state.exits.filter(pointInExit);
+        if (exitMatches.length === 1) return Number(exitMatches[0].floorId) || 0;
+        if (exitMatches.length > 1) {
+          if (Number.isFinite(prevFloor) && exitMatches.some((e) => Number(e.floorId) === prevFloor)) return prevFloor;
+          return Math.min.apply(null, exitMatches.map((e) => Number(e.floorId) || 0));
+        }
+
+        const candidateFloors = Array.from(new Set([
+          ...Array.from(state.roomsByFloor.keys()),
+          ...(state.peopleAreasByFloor ? Array.from(state.peopleAreasByFloor.keys()) : [])
+        ]));
+        const roomHitFloors = [];
+        candidateFloors.forEach((fid) => {
+          const peopleAreas = state.peopleAreasByFloor ? (state.peopleAreasByFloor.get(fid) || []) : [];
+          for (let i = 0; i < peopleAreas.length; i++) {
+            const r = peopleAreas[i];
+            const b = r.bbox;
+            if (px < b.minX || px > b.maxX || pz < b.minZ || pz > b.maxZ) continue;
+            if (this.pointInReplayPolygon(px, pz, r.points)) {
+              roomHitFloors.push(fid);
+              return;
+            }
+          }
+          const rooms = state.roomsByFloor.get(fid) || [];
+          for (let i = 0; i < rooms.length; i++) {
+            const r = rooms[i];
+            const b = r.bbox;
+            if (px < b.minX || px > b.maxX || pz < b.minZ || pz > b.maxZ) continue;
+            if (this.pointInReplayPolygon(px, pz, r.points)) {
+              roomHitFloors.push(fid);
+              break;
+            }
+          }
+        });
+        if (roomHitFloors.length === 1) return Number(roomHitFloors[0]) || 0;
+        if (roomHitFloors.length > 1) {
+          if (Number.isFinite(prevFloor) && roomHitFloors.includes(prevFloor)) return prevFloor;
+          return Math.min.apply(null, roomHitFloors.map((v) => Number(v) || 0));
+        }
+
+        // If no explicit geometric evidence is found, keep previous floor assignment.
+        // This avoids random cross-floor flicker when floors overlap in 2D projection.
+        if (Number.isFinite(prevFloor)) return prevFloor;
+        let bestFloor = 0;
+        let bestD2 = Infinity;
+        state.exits.forEach((e) => {
+          const dx = px - e.center.x;
+          const dz = pz - e.center.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 < bestD2) {
+            bestD2 = d2;
+            bestFloor = Number(e.floorId) || 0;
+          }
+        });
+        return bestFloor;
+      },
+      detectReplayTeleport(prev, next) {
+        const state = this.replay3D;
+        if (!state || !state.ready) return null;
+        const px = Number(prev.x);
+        const pz = Number(prev.y);
+        const nx = Number(next.x);
+        const nz = Number(next.y);
+        if (!Number.isFinite(px) || !Number.isFinite(pz) || !Number.isFinite(nx) || !Number.isFinite(nz)) return null;
+        const dx = nx - px;
+        const dz = nz - pz;
+        const dist2 = dx * dx + dz * dz;
+        if (dist2 < 25) return null;
+
+        const near = (posX, posZ, target, radius) => {
+          const ddx = posX - target.x;
+          const ddz = posZ - target.z;
+          return ddx * ddx + ddz * ddz <= radius * radius;
+        };
+
+        const teleportLinks = Array.isArray(state.teleportLinks) ? state.teleportLinks : [];
+        for (let i = 0; i < teleportLinks.length; i++) {
+          const link = teleportLinks[i];
+          const r = Number(link.radius) || 2;
+          if (near(px, pz, link.from.center, r) && near(nx, nz, link.to.center, r)) {
+            return { x: nx, y: nz, floorId: Number(link.to.floorId) || 0, durationMs: Number(link.durationMs) || 350 };
+          }
+        }
+
+        const connectors = Array.isArray(state.connectors) ? state.connectors : [];
+        for (let i = 0; i < connectors.length; i++) {
+          const c = connectors[i];
+          const r = Number(c.radius) || 2;
+          if (near(px, pz, c.entry, r) && near(nx, nz, c.exit, r)) {
+            return { x: nx, y: nz, floorId: Number(c.toFloor) || 0, durationMs: Number(c.durationMs) || 350 };
+          }
+          if (near(px, pz, c.exit, r) && near(nx, nz, c.entry, r)) {
+            return { x: nx, y: nz, floorId: Number(c.fromFloor) || 0, durationMs: Number(c.durationMs) || 350 };
+          }
+        }
+
+        const pf = Number(prev.floorId);
+        const nf = Number(next.floorId);
+        if (Number.isFinite(pf) && Number.isFinite(nf) && pf !== nf) {
+          return { x: nx, y: nz, floorId: nf, durationMs: Number(this.view3D && this.view3D.teleportDurationMs) || 350 };
+        }
+        return null;
       },
       getFloorFilterOptions() {
         const floors = new Set(this.getFloor2DOptions().length ? this.getFloor2DOptions() : [0]);
@@ -1758,82 +2082,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
         const onlyCurrent = !!this.view3D.onlyCurrentFloor;
         this.threeViewer.setFloorFilter(filter === 'all' ? null : Number(filter), onlyCurrent);
       },
-      openConnectorDialog() {
-        this.persistCurrentFloorToStore();
-        this.dialogVisible_connector = true;
-        this.cancelConnectorEdit();
-      },
-      addConnector() {
-        this.connectorEdit.active = true;
-        this.connectorEdit.isNew = true;
-        this.connectorEdit.id = (this.connectors || []).length ? Math.max(...this.connectors.map((c) => c.id || 0)) + 1 : 1;
-        this.connectorEdit.type = 1;
-        this.connectorEdit.fromFloor = Number(this.floor2D && this.floor2D.current != null ? this.floor2D.current : 0);
-        this.connectorEdit.toFloor = this.connectorEdit.fromFloor + 1;
-        this.connectorEdit.entryX = 0;
-        this.connectorEdit.entryY = 0;
-        this.connectorEdit.exitX = 0;
-        this.connectorEdit.exitY = 0;
-        this.connectorEdit.capacity = 1;
-        this.connectorEdit.serviceTime = 5;
-      },
-      editConnector(index) {
-        const c = this.connectors[index];
-        if (!c) return;
-        this.connectorEdit.active = true;
-        this.connectorEdit.isNew = false;
-        this.connectorEdit.editIndex = index;
-        this.connectorEdit.id = c.id;
-        this.connectorEdit.type = c.type !== undefined ? c.type : 1;
-        this.connectorEdit.fromFloor = Number(c.fromFloor);
-        this.connectorEdit.toFloor = Number(c.toFloor);
-        this.connectorEdit.entryX = Number(c.entryX ?? c.x ?? 0);
-        this.connectorEdit.entryY = Number(c.entryY ?? c.y ?? 0);
-        this.connectorEdit.exitX = Number(c.exitX ?? c.entryX ?? c.x ?? 0);
-        this.connectorEdit.exitY = Number(c.exitY ?? c.entryY ?? c.y ?? 0);
-        this.connectorEdit.capacity = Number(c.capacity) || 1;
-        this.connectorEdit.serviceTime = Number(c.serviceTime) || 5;
-      },
-      saveConnector() {
-        const e = this.connectorEdit;
-        const conn = {
-          id: e.id,
-          type: e.type,
-          fromFloor: e.fromFloor,
-          toFloor: e.toFloor,
-          entryX: e.entryX,
-          entryY: e.entryY,
-          exitX: e.exitX,
-          exitY: e.exitY,
-          capacity: e.capacity,
-          serviceTime: e.serviceTime
-        };
-        if (e.isNew) {
-          this.connectors = this.connectors || [];
-          this.connectors.push(conn);
-        } else if (e.editIndex !== undefined) {
-          this.connectors[e.editIndex] = conn;
-        }
-        this.cancelConnectorEdit();
-        if (this.view3D.enabled && this.threeViewer) this.syncThreeSceneData();
-        this.draw();
-      },
-      cancelConnectorEdit() {
-        this.connectorEdit.active = false;
-        this.connectorEdit.editIndex = undefined;
-      },
-      deleteConnector(index) {
-        this.$confirm('确定删除该连接器？', '提示', {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
-          type: 'warning'
-        }).then(() => {
-          this.connectors.splice(index, 1);
-          this.cancelConnectorEdit();
-          if (this.view3D.enabled && this.threeViewer) this.syncThreeSceneData();
-          this.draw();
-        }).catch(() => {});
-      },
+
       fitBackgroundToCanvas(imageWidth, imageHeight, options = {}) {
         const { updateBase = false } = options;
         const canvasWidth = this.canvas ? this.canvas.width : 0;
@@ -2155,7 +2404,32 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
       getMessage(msg){
         // alert(msg.data);
         console.log(msg.data);
-        let data=JSON.parse(msg.data);
+        if (!msg || typeof msg.data !== 'string' || msg.data === '' || msg.data === 'undefined' || msg.data === 'null') {
+          return;
+        }
+        let data;
+        try {
+          data = JSON.parse(msg.data);
+        } catch (e) {
+          return;
+        }
+        const imgX0 = Number(this.viewInfo && this.viewInfo.imgX0) || 0;
+        const imgY0 = Number(this.viewInfo && this.viewInfo.imgY0) || 0;
+        const sT = Number(this.nST && this.nST.sT) || 1;
+        const mapPoint = (p) => {
+          if (!p || typeof p !== 'object') return;
+          const x = Number(p.x);
+          const y = Number(p.y);
+          if (Number.isFinite(x)) p.x = x / sT + imgX0;
+          if (Number.isFinite(y)) p.y = y / sT + imgY0;
+        };
+        if (Array.isArray(data)) {
+          if (Array.isArray(data[0])) {
+            data.forEach((frame) => (Array.isArray(frame) ? frame.forEach(mapPoint) : undefined));
+          } else {
+            data.forEach(mapPoint);
+          }
+        }
         if(this.show.clipData.length > 120){
           // 丢弃最旧的块，避免内存无限增长
           this.show.clipData.shift();
@@ -2166,8 +2440,49 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
         this.socketState=0;
       },
       sendSocket(msg){
-        // this.socket.send(msg);
+        if (!this.socket || typeof this.socket.send !== 'function' || this.socket.readyState !== WebSocket.OPEN) {
+          return;
+        }
         this.socket.send(JSON.stringify(msg));
+      },
+      async fetchReplayFlat(flatIndex){
+        const file = (this.playbackConfig && this.playbackConfig.file) ? this.playbackConfig.file : '1';
+        const status = (this.playbackConfig && this.playbackConfig.status) ? this.playbackConfig.status : 1;
+        const url = restweburl + 'getReplayFlat';
+        const res = await axios({
+          url,
+          method: 'post',
+          data: {
+            bID: this.$route.params.bID,
+            status,
+            flat: flatIndex,
+            file
+          }
+        });
+        if (!res || !res.data || res.data.msg !== 'success') {
+          throw new Error((res && res.data && res.data.msg) ? res.data.msg : '获取回放分片失败');
+        }
+        const clip = res.data.data;
+        const imgX0 = Number(this.viewInfo && this.viewInfo.imgX0) || 0;
+        const imgY0 = Number(this.viewInfo && this.viewInfo.imgY0) || 0;
+        const sT = Number(this.nST && this.nST.sT) || 1;
+        if (Array.isArray(clip)) {
+          clip.forEach((frame) => {
+            if (!Array.isArray(frame)) return;
+            frame.forEach((p) => {
+              if (!p || typeof p !== 'object') return;
+              const x = Number(p.x);
+              const y = Number(p.y);
+              if (Number.isFinite(x)) p.x = x / sT + imgX0;
+              if (Number.isFinite(y)) p.y = y / sT + imgY0;
+            });
+          });
+        }
+        if (this.show.clipData.length > 120) {
+          this.show.clipData.shift();
+          this.show.bufferStartIndex = (this.show.bufferStartIndex || 0) + 1;
+        }
+        this.show.clipData.push(clip);
       },
         drawHeatMap() {          
           // 配置参数
@@ -2255,7 +2570,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
                   rooms:this.init_rooms(),
                   navPos:this.init_navs(),
                   peos:this.init_poes(),
-                  connectors:this.init_connectors(),
+  
               }
           })
           .then(async (res) => {
@@ -2760,108 +3075,13 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           });
         },
         initShow_2(){
-          //获取数据
-          var url = restweburl + 'getGRD';
-          axios({
-              url: url,
-              method: "post",
-              data:{
-                bID:this.$route.params.bID,
-                file:1,
-                status:1
-              }
-          })
-          .then(async (res) => {
-              if(res.data.msg==='success'){
-                if(this.tabPosition=='graph'){
-                  // 基于准备好的dom，初始化echarts实例
-                  var myChart;
-                  myChart = echarts.init(document.getElementById('受照剂量-时间(时间优先)'));
-                  // 绘制图表
-                  var dat = {
-                    title: {
-                      text: '受照剂量-时间'
-                    },
-                    tooltip: {},
-                    xAxis: {
-                      name:'时间/s',
-                      type:'category',
-                      data: res.data.data.time
-                    },
-                    yAxis: {
-                      name:'受照剂量/mSv',
-                      type:'value',
-                      scale:true,
-                    },
-                    legend: {
-                      data: ['grd']
-                    },
-                    series: [],
-                    toolbox: {
-                        show: true,
-                        feature: {
-                            mark: {show: true},
-                            saveAsImage: {show: true},
-                        }
-                    },
-                  };
-
-                  //图表数据载入
-                  // for(let i=0;i<res.data.data.exits.length;i++){
-                  //   // alert(res.data.data.exits[i].name)
-                  //   dat.legend.data.push(res.data.data.exits[i].name);
-                  // }
-                  // for(let i=0;i<res.data.data.exits.length;i++){
-                  //   dat.series.push({name:res.data.data.exits[i].name,type:'line',data:res.data.data.exits[i].data});
-                  // }
-                  // myChart.setOption(dat);
-
-                  //图表数据载入
-                  // for(let i=0;i<res.data.data.exits.length;i++){
-                  //   // alert(res.data.data.exits[i].name)
-                  //   dat.legend.data.push(res.data.data.exits[i].name);
-                  // }
-                  for(let i=0;i<1;i++){
-                    dat.series.push({name:'test',type:'line',data:res.data.data.grd});
-                  }
-                  myChart.setOption(dat);
-                }
-                else if(this.tabPosition=='data'){
-                  this.table_raw=[];this.table_raw_label=[];
-                  //原始数据载入
-                  for(let i=0;i<1;i++){
-                    this.table_raw_label.push({label:'剂量',prop:'剂量'});
-                  }
-                  let dat_2=[];
-                  console.log('law',res.data.data.grd);
-
-                  for(let i=0;i<res.data.data.time.length;i++){
-                    let dat_3={};
-                      dat_3['剂量']=res.data.data.grd[i];
-                    dat_2.push(dat_3);  
-                  }
-                  console.log('dat',dat_2);
-                  this.table_raw=dat_2; 
-                  console.log(this.table_raw);
-                }
-              }
-              else{
-                  this.$notify({
-                      title: '注意',
-                      message: res.data.msg,
-                      type: 'warning',
-                      offset: 100
-                  });
-                  this.isUpdate=0;
-              }
-          }).catch((error) =>{
-              this.$notify.error({
-                  title: '错误',
-                  message: error,
-                  duration: 0,
-                  offset: 100
-              });
-              this.isUpdate=-1;
+          this.table_raw = [];
+          this.table_raw_label = [];
+          this.$notify({
+            title: '提示',
+            message: '该统计模块已移除',
+            type: 'info',
+            offset: 100
           });
         },
         initShow_3(){
@@ -2880,7 +3100,6 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
                 if(this.tabPosition=='graph'){
                   // 基于准备好的dom，初始化echarts实例
                   var myChart;
-                  alert(document.getElementById('区域密度-时间'))
                   myChart = echarts.init(document.getElementById('区域密度-时间'));
                   // 绘制图表
                   var dat = {
@@ -2894,12 +3113,12 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
                       data: res.data.data.time
                     },
                     yAxis: {
-                      name:'受照剂量/mSv',
+                      name:'区域密度',
                       type:'value',
                       scale:true,
                     },
                     legend: {
-                      data: ['grd']
+                      data: ['density']
                     },
                     series: [],
                     toolbox: {
@@ -2916,23 +3135,19 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
                   //   // alert(res.data.data.exits[i].name)
                   //   dat.legend.data.push(res.data.data.exits[i].name);
                   // }
-                  for(let i=0;i<res.data.data.time.length;i++){
-                    dat.series.push({name:'test',type:'line',data:res.data.data.grd[i]});
-                  }
+                  dat.series.push({name:'density',type:'line',data:res.data.data});
                   myChart.setOption(dat);
                 }
                 else if(this.tabPosition=='data'){
                   this.table_raw=[];this.table_raw_label=[];
                   //原始数据载入
                   for(let i=0;i<1;i++){
-                    this.table_raw_label.push({label:'剂量',prop:'剂量'});
+                    this.table_raw_label.push({label:'密度',prop:'密度'});
                   }
                   let dat_2=[];
                   for(let i=0;i<res.data.data.time.length;i++){
                     let dat_3={};
-                    for(let j=0;j<res.data.data.time.length;j++){
-                      dat_3['剂量']=res.data.data.grd[j];
-                    }
+                    dat_3['密度']=res.data.data[i];
                     dat_2.push(dat_3);
                   }
                   this.table_raw=dat_2;
@@ -3067,93 +3282,13 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           });
         },
         initShow_5(){
-          //获取数据
-          var url = restweburl + 'getPerGRD';
-          axios({
-              url: url,
-              method: "post",
-              data:{
-                bID:this.$route.params.bID,
-                file:1,
-                status:1
-              }
-          })
-          .then(async (res) => {
-              if(res.data.msg==='success'){
-                if(this.tabPosition=='graph'){
-                   // 基于准备好的dom，初始化echarts实例
-                    var myChart = echarts.init(document.getElementById('受照剂量-人数直方图(时间优先)'));
-                    // 绘制图表
-                    var dat = {
-                      title: {
-                        text: '受照剂量-人数'
-                      },
-                      tooltip: {},
-                      xAxis: {
-                        name:'受照剂量/mSv',
-                        type: 'category',
-                        data: res.data.data.time // 人数
-                      },
-                      yAxis: {
-                        name:'人数/人',
-                        type: 'value'
-                      },
-                      series: [{
-                        name: '受照剂量',
-                        type: 'bar', // 更改为 'bar' 以绘制直方图
-                        data: res.data.data.grd, // 直方图数据
-                        itemStyle: {
-                          color: '#3398DB' // 设置直方图的颜色
-                        },
-                        barWidth: '50%' // 设置柱子的宽度
-                      }],
-                      toolbox: {
-                          show: true,
-                          feature: {
-                              mark: {show: true},
-                              saveAsImage: {show: true},
-                          }
-                      },
-                    };
-                    // 使用刚指定的配置项和数据显示图表。
-                    myChart.setOption(dat);
-                }
-                else if(this.tabPosition=='data'){
-                  this.table_raw=[];this.table_raw_label=[];
-                  //原始数据载入
-                  for(let i=0;i<1;i++){
-                    this.table_raw_label.push({label:'剂量',prop:'剂量'});
-                  }
-                  let dat_2=[];
-                  console.log('law',res.data.data.grd);
-
-                  for(let i=0;i<res.data.data.time.length;i++){
-                    let dat_3={};
-                      dat_3['剂量']=res.data.data.grd[i];
-                    dat_2.push(dat_3);  
-                  }
-                  console.log('dat',dat_2);
-                  this.table_raw=dat_2; 
-                  console.log(this.table_raw);
-                }
-              }
-              else{
-                  this.$notify({
-                      title: '注意',
-                      message: res.data.msg,
-                      type: 'warning',
-                      offset: 100
-                  });
-                  this.isUpdate=0;
-              }
-          }).catch((error) =>{
-              this.$notify.error({
-                  title: '错误',
-                  message: error,
-                  duration: 0,
-                  offset: 100
-              });
-              this.isUpdate=-1;
+          this.table_raw = [];
+          this.table_raw_label = [];
+          this.$notify({
+            title: '提示',
+            message: '该统计模块已移除',
+            type: 'info',
+            offset: 100
           });
         },
         initShow_6(){
@@ -3173,7 +3308,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
                 if(this.tabPosition=='graph'){
                   // 基于准备好的dom，初始化echarts实例
                   var myChart;
-                  myChart = echarts.init(document.getElementById('撤离人数-时间(剂量优先)'));
+                  myChart = echarts.init(document.getElementById('撤离人数-时间(方案二)'));
                   // 绘制图表
                   var dat = {
                     title: {
@@ -3251,107 +3386,13 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           });
         },
         initShow_7(){
-          //获取数据
-          var url = restweburl + 'getGRD';
-          axios({
-              url: url,
-              method: "post",
-              data:{
-                bID:this.$route.params.bID,
-                file:2,
-                status:2
-              }
-          })
-          .then(async (res) => {
-              if(res.data.msg==='success'){
-                if(this.tabPosition=='graph'){
-                  // 基于准备好的dom，初始化echarts实例
-                  var myChart;
-                  myChart = echarts.init(document.getElementById('受照剂量-时间(剂量优先)'));
-                  // 绘制图表
-                  var dat = {
-                    title: {
-                      text: '受照剂量-时间'
-                    },
-                    tooltip: {},
-                    xAxis: {
-                      name:'时间/s',
-                      type:'category',
-                      data: res.data.data.time
-                    },
-                    yAxis: {
-                      name:'受照剂量/mSV',
-                      type:'value',
-                      scale:true,
-                    },
-                    legend: {
-                      data: ['grd']
-                    },
-                    series: [],
-                    toolbox: {
-                        show: true,
-                        feature: {
-                            mark: {show: true},
-                            saveAsImage: {show: true},
-                        }
-                    },
-                  };
-                  // //图表数据载入
-                  // for(let i=0;i<res.data.data.exits.length;i++){
-                  //   // alert(res.data.data.exits[i].name)
-                  //   dat.legend.data.push(res.data.data.exits[i].name);
-                  // }
-                  // for(let i=0;i<res.data.data.exits.length;i++){
-                  //   dat.series.push({name:res.data.data.exits[i].name,type:'line',data:res.data.data.exits[i].data});
-                  // }
-                  // myChart.setOption(dat);
-
-                  //图表数据载入
-                  // for(let i=0;i<res.data.data.exits.length;i++){
-                  //   // alert(res.data.data.exits[i].name)
-                  //   dat.legend.data.push(res.data.data.exits[i].name);
-                  // }
-                  for(let i=0;i<1;i++){
-                    dat.series.push({name:'test',type:'line',data:res.data.data.grd});
-                  }
-                  myChart.setOption(dat);
-                }
-                else if(this.tabPosition=='data'){
-                  this.table_raw=[];this.table_raw_label=[];
-                  //原始数据载入
-                  for(let i=0;i<1;i++){
-                    this.table_raw_label.push({label:'剂量',prop:'剂量'});
-                  }
-                  let dat_2=[];
-                  console.log('law',res.data.data.grd);
-
-                  for(let i=0;i<res.data.data.time.length;i++){
-                    let dat_3={};
-                      dat_3['剂量']=res.data.data.grd[i];
-                    dat_2.push(dat_3);  
-                  }
-                  console.log('dat',dat_2);
-                  this.table_raw=dat_2; 
-                  console.log(this.table_raw);
-                }
-              }
-              else{
-                  this.$notify({
-                      title: '注意',
-                      message: res.data.msg,
-                      type: 'warning',
-                      offset: 100
-                  });
-                  this.isUpdate=0;
-              }
-          }).catch((error) =>{
-              this.$notify.error({
-                  title: '错误',
-                  message: error,
-                  duration: 0,
-                  offset: 100
-              });
-              this.isUpdate=-1;
+          this.table_raw = [];
+          this.table_raw_label = [];
+          this.$notify({
+            title: '提示',
+            message: '该统计模块已移除',
+            type: 'info',
+            offset: 100
           });
         },
         initShow_8() {
@@ -3370,7 +3411,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
             if (res.data.msg === 'success') {
               if (this.tabPosition === 'graph') {
                 // 基于准备好的dom，初始化echarts实例
-                var myChart = echarts.init(document.getElementById('撤离人数-时间直方图(剂量优先)'));
+                var myChart = echarts.init(document.getElementById('撤离人数-时间直方图(方案二)'));
                 //let all_exit = res.data.data.exits[res.data.data.exits.length-1].data[res.data.data.exits[res.data.data.exits.length-1].data.length-1]
                 let timeIntervals = res.data.data.time.filter((time, index) => index % 3 === 0);
                 // 绘制图表
@@ -3464,93 +3505,13 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           });
         },
         initShow_9(){
-          //获取数据
-          var url = restweburl + 'getPerGRD';
-          axios({
-              url: url,
-              method: "post",
-              data:{
-                bID:this.$route.params.bID,
-                file:2,
-                status:2
-              }
-          })
-          .then(async (res) => {
-              if(res.data.msg==='success'){
-                if(this.tabPosition=='graph'){
-                   // 基于准备好的dom，初始化echarts实例
-                    var myChart = echarts.init(document.getElementById('受照剂量-人数直方图(剂量优先)'));
-                    // 绘制图表
-                    var dat = {
-                      title: {
-                        text: '受照剂量-人数'
-                      },
-                      tooltip: {},
-                      xAxis: {
-                        name:'受照剂量/mSv',
-                        type: 'category',
-                        data: res.data.data.time // 人数
-                      },
-                      yAxis: {
-                        name:'人数/人',
-                        type: 'value'
-                      },
-                      series: [{
-                        name: '受照剂量',
-                        type: 'bar', // 更改为 'bar' 以绘制直方图
-                        data: res.data.data.grd, // 直方图数据
-                        itemStyle: {
-                          color: '#3398DB' // 设置直方图的颜色
-                        },
-                        barWidth: '50%' // 设置柱子的宽度
-                      }],
-                      toolbox: {
-                          show: true,
-                          feature: {
-                              mark: {show: true},
-                              saveAsImage: {show: true},
-                          }
-                      },
-                    };
-                    // 使用刚指定的配置项和数据显示图表。
-                    myChart.setOption(dat);
-                }
-                else if(this.tabPosition=='data'){
-                  this.table_raw=[];this.table_raw_label=[];
-                  //原始数据载入
-                  for(let i=0;i<1;i++){
-                    this.table_raw_label.push({label:'剂量',prop:'剂量'});
-                  }
-                  let dat_2=[];
-                  console.log('law',res.data.data.grd);
-
-                  for(let i=0;i<res.data.data.time.length;i++){
-                    let dat_3={};
-                      dat_3['剂量']=res.data.data.grd[i];
-                    dat_2.push(dat_3);  
-                  }
-                  console.log('dat',dat_2);
-                  this.table_raw=dat_2; 
-                  console.log(this.table_raw);
-                }
-              }
-              else{
-                  this.$notify({
-                      title: '注意',
-                      message: res.data.msg,
-                      type: 'warning',
-                      offset: 100
-                  });
-                  this.isUpdate=0;
-              }
-          }).catch((error) =>{
-              this.$notify.error({
-                  title: '错误',
-                  message: error,
-                  duration: 0,
-                  offset: 100
-              });
-              this.isUpdate=-1;
+          this.table_raw = [];
+          this.table_raw_label = [];
+          this.$notify({
+            title: '提示',
+            message: '该统计模块已移除',
+            type: 'info',
+            offset: 100
           });
         },
         initShow_10(){
@@ -3570,7 +3531,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
                 if(this.tabPosition=='graph'){
                   // 基于准备好的dom，初始化echarts实例
                   var myChart;
-                  myChart = echarts.init(document.getElementById('撤离人数-时间(最大剂量最小优先)'));
+                  myChart = echarts.init(document.getElementById('撤离人数-时间(方案三)'));
                   // 绘制图表
                   var dat = {
                     title: {
@@ -3648,107 +3609,13 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           });
         },
         initShow_11(){
-          //获取数据
-          var url = restweburl + 'getGRD';
-          axios({
-              url: url,
-              method: "post",
-              data:{
-                bID:this.$route.params.bID,
-                file:3,
-                status:2
-              }
-          })
-          .then(async (res) => {
-              if(res.data.msg==='success'){
-                if(this.tabPosition=='graph'){
-                  // 基于准备好的dom，初始化echarts实例
-                  var myChart;
-                  myChart = echarts.init(document.getElementById('受照剂量-时间(最大剂量最小优先)'));
-                  // 绘制图表
-                  var dat = {
-                    title: {
-                      text: '受照剂量-时间'
-                    },
-                    tooltip: {},
-                    xAxis: {
-                      name:'时间/s',
-                      type:'category',
-                      data: res.data.data.time
-                    },
-                    yAxis: {
-                      name:'受照剂量/mSv',
-                      type:'value',
-                      scale:true,
-                    },
-                    legend: {
-                      data: ['grd']
-                    },
-                    series: [],
-                    toolbox: {
-                        show: true,
-                        feature: {
-                            mark: {show: true},
-                            saveAsImage: {show: true},
-                        }
-                    },
-                  };
-                  // //图表数据载入
-                  // for(let i=0;i<res.data.data.exits.length;i++){
-                  //   // alert(res.data.data.exits[i].name)
-                  //   dat.legend.data.push(res.data.data.exits[i].name);
-                  // }
-                  // for(let i=0;i<res.data.data.exits.length;i++){
-                  //   dat.series.push({name:res.data.data.exits[i].name,type:'line',data:res.data.data.exits[i].data});
-                  // }
-                  // myChart.setOption(dat);
-
-                  //图表数据载入
-                  // for(let i=0;i<res.data.data.exits.length;i++){
-                  //   // alert(res.data.data.exits[i].name)
-                  //   dat.legend.data.push(res.data.data.exits[i].name);
-                  // }
-                  for(let i=0;i<1;i++){
-                    dat.series.push({name:'test',type:'line',data:res.data.data.grd});
-                  }
-                  myChart.setOption(dat);
-                }
-                else if(this.tabPosition=='data'){
-                  this.table_raw=[];this.table_raw_label=[];
-                  //原始数据载入
-                  for(let i=0;i<1;i++){
-                    this.table_raw_label.push({label:'剂量',prop:'剂量'});
-                  }
-                  let dat_2=[];
-                  console.log('law',res.data.data.grd);
-
-                  for(let i=0;i<res.data.data.time.length;i++){
-                    let dat_3={};
-                      dat_3['剂量']=res.data.data.grd[i];
-                    dat_2.push(dat_3);  
-                  }
-                  console.log('dat',dat_2);
-                  this.table_raw=dat_2; 
-                  console.log(this.table_raw);
-                }
-              }
-              else{
-                  this.$notify({
-                      title: '注意',
-                      message: res.data.msg,
-                      type: 'warning',
-                      offset: 100
-                  });
-                  this.isUpdate=0;
-              }
-          }).catch((error) =>{
-              this.$notify.error({
-                  title: '错误',
-                  message: error,
-                  duration: 0,
-                  offset: 100
-              });
-              this.isUpdate=-1;
+          this.table_raw = [];
+          this.table_raw_label = [];
+          this.$notify({
+            title: '提示',
+            message: '该统计模块已移除',
+            type: 'info',
+            offset: 100
           });
         },
         initShow_12() {
@@ -3767,7 +3634,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
             if (res.data.msg === 'success') {
               if (this.tabPosition === 'graph') {
                 // 基于准备好的dom，初始化echarts实例
-                var myChart = echarts.init(document.getElementById('撤离人数-时间直方图(剂量优先)'));
+                var myChart = echarts.init(document.getElementById('撤离人数-时间直方图(方案三)'));
                 //let all_exit = res.data.data.exits[res.data.data.exits.length-1].data[res.data.data.exits[res.data.data.exits.length-1].data.length-1]
                 let timeIntervals = res.data.data.time.filter((time, index) => index % 3 === 0);
                 // 绘制图表
@@ -3861,99 +3728,16 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           });
         },
         initShow_13(){
-          //获取数据
-          var url = restweburl + 'getPerGRD';
-          axios({
-              url: url,
-              method: "post",
-              data:{
-                bID:this.$route.params.bID,
-                file:3,
-                status:2
-              }
-          })
-          .then(async (res) => {
-              if(res.data.msg==='success'){
-                if(this.tabPosition=='graph'){
-                   // 基于准备好的dom，初始化echarts实例
-                    var myChart = echarts.init(document.getElementById('受照剂量-人数直方图(最大剂量最小优先)'));
-                    // 绘制图表
-                    var dat = {
-                      title: {
-                        text: '受照剂量-人数'
-                      },
-                      tooltip: {},
-                      xAxis: {
-                        name:'受照剂量/mSv',
-                        type: 'category',
-                        data: res.data.data.time // 人数
-                      },
-                      yAxis: {
-                        name:'人数/人',
-                        type: 'value'
-                      },
-                      series: [{
-                        name: '受照剂量',
-                        type: 'bar', // 更改为 'bar' 以绘制直方图
-                        data: res.data.data.grd, // 直方图数据
-                        itemStyle: {
-                          color: '#3398DB' // 设置直方图的颜色
-                        },
-                        barWidth: '50%' // 设置柱子的宽度
-                      }],
-                      toolbox: {
-                          show: true,
-                          feature: {
-                              mark: {show: true},
-                              saveAsImage: {show: true},
-                          }
-                      },
-                    };
-                    // 使用刚指定的配置项和数据显示图表。
-                    myChart.setOption(dat);
-                }
-                else if(this.tabPosition=='data'){
-                  this.table_raw=[];this.table_raw_label=[];
-                  //原始数据载入
-                  for(let i=0;i<1;i++){
-                    this.table_raw_label.push({label:'剂量',prop:'剂量'});
-                  }
-                  let dat_2=[];
-                  console.log('law',res.data.data.grd);
-
-                  for(let i=0;i<res.data.data.time.length;i++){
-                    let dat_3={};
-                      dat_3['剂量']=res.data.data.grd[i];
-                    dat_2.push(dat_3);  
-                  }
-                  console.log('dat',dat_2);
-                  this.table_raw=dat_2; 
-                  console.log(this.table_raw);
-                }
-              }
-              else{
-                  this.$notify({
-                      title: '注意',
-                      message: res.data.msg,
-                      type: 'warning',
-                      offset: 100
-                  });
-                  this.isUpdate=0;
-              }
-          }).catch((error) =>{
-              this.$notify.error({
-                  title: '错误',
-                  message: error,
-                  duration: 0,
-                  offset: 100
-              });
-              this.isUpdate=-1;
+          this.table_raw = [];
+          this.table_raw_label = [];
+          this.$notify({
+            title: '提示',
+            message: '该统计模块已移除',
+            type: 'info',
+            offset: 100
           });
         },
         // 获取方案数据
-        closeMethod(){
-          this.dialogVisible_6 = false;
-        },
         closeMethod_1(){
           this.dialogVisible_7 = false;
         },
@@ -3975,44 +3759,6 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
         closeMethod_7(){
           this.dialogVisible_attr_show_19 = false;
         },
-        show_method(){
-          //获取数据
-          var url = restweburl + 'getMethodInfo';
-          axios({
-              url: url,
-              method: "post",
-              data:{
-                bID:this.$route.params.bID,
-                file:1,
-              }
-          })
-          .then(async (res) => {
-              if(res.data.msg==='success'){
-                  this.table_raw_method=[];
-                  //原始数据载入
-                  this.table_raw_method.push({indicator:'撤离时间', simulatedData:res.data.data.evacuation.totalTime + 's'})
-                  this.table_raw_method.push({indicator:'总体剂量', simulatedData:res.data.data.globalGrd.grd[res.data.data.globalGrd.grdSize-1]+ 'mSV'})
-                  this.table_raw_method.push({indicator:'最大个人剂量', simulatedData:res.data.data.perGrd.max_grd+ 'mSV'})
-              }
-              else{
-                  this.$notify({
-                      title: '注意',
-                      message: res.data.msg,
-                      type: 'warning',
-                      offset: 100
-                  });
-                  this.isUpdate=0;
-              }
-          }).catch((error) =>{
-              this.$notify.error({
-                  title: '错误',
-                  message: error,
-                  duration: 0,
-                  offset: 100
-              });
-              this.isUpdate=-1;
-          });
-        },
         show_method_1(){
           //获取数据
           var url = restweburl + 'getMethodInfo';
@@ -4029,8 +3775,6 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
                   this.table_raw_method=[];
                   //原始数据载入
                   this.table_raw_method.push({indicator:'撤离时间', simulatedData:res.data.data.evacuation.totalTime/2 + 's'})
-                  this.table_raw_method.push({indicator:'总体剂量', simulatedData:res.data.data.globalGrd.grd[res.data.data.globalGrd.grdSize-1]+ 'mSV'})
-                  this.table_raw_method.push({indicator:'最大个人剂量', simulatedData:res.data.data.perGrd.max_grd+ 'mSV'})
               }
               else{
                   this.$notify({
@@ -4067,8 +3811,6 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
                   this.table_raw_method=[];
                   //原始数据载入
                   this.table_raw_method.push({indicator:'撤离时间', simulatedData:res.data.data.evacuation.totalTime/2 + 's'})
-                  this.table_raw_method.push({indicator:'总体剂量', simulatedData:res.data.data.globalGrd.grd[res.data.data.globalGrd.grdSize-1]+ 'mSV'})
-                  this.table_raw_method.push({indicator:'最大个人剂量', simulatedData:res.data.data.perGrd.max_grd+ 'mSV'})
               }
               else{
                   this.$notify({
@@ -4107,18 +3849,6 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
                                 method1:res.data.data.res1.evacuation.totalTime + 's',
                                 method2:res.data.data.res2.evacuation.totalTime + 's',
                                 method3:res.data.data.res3.evacuation.totalTime + 's',
-                              })
-                              this.table_raw_method.push({
-                                indicator:'总体剂量',
-                                method1:res.data.data.res1.globalGrd.grd[res.data.data.res1.globalGrd.grdSize-1] + 'mSV',
-                                method2:res.data.data.res2.globalGrd.grd[res.data.data.res2.globalGrd.grdSize-1] + 'mSV',
-                                method3:res.data.data.res3.globalGrd.grd[res.data.data.res3.globalGrd.grdSize-1] + 'mSV',
-                              })
-                              this.table_raw_method.push({
-                                indicator:'最大个人剂量', 
-                                method1:res.data.data.res1.perGrd.max_grd + 'mSV',
-                                method2:res.data.data.res2.perGrd.max_grd + 'mSV',
-                                method3:res.data.data.res3.perGrd.max_grd + 'mSV',
                               })
                           }
                          
@@ -4219,148 +3949,19 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           });
         },
         initShow_15(){
-          //获取数据
-          var url = restweburl + 'getMethodGRD';
-          axios({
-              url: url,
-              method: "post",
-              data:{
-                bID:this.$route.params.bID,
-                selectMethods:this.selectMethod,
-              }
-          })
-          .then(async (res) => {
-              if(res.data.msg==='success'){
-                  // 基于准备好的dom，初始化echarts实例
-                  var myChart;
-                  myChart = echarts.init(document.getElementById('受照剂量对比'));
-                  // 绘制图表
-                  var dat = {
-                    title: {
-                      text: '受照剂量-时间'
-                    },
-                    tooltip: {},
-                    xAxis: {
-                      name:'时间/s',
-                      type:'category',
-                      data: res.data.data.time
-                    },
-                    yAxis: {
-                      name:'受照剂量/mSV',
-                      type:'value',
-                      scale:true,
-                    },
-                    legend: {
-                      data: []
-                    },
-                    series: [],
-                    toolbox: {
-                        show: true,
-                        feature: {
-                            mark: {show: true},
-                            saveAsImage: {show: true},
-                        }
-                    },
-
-                  };
-
-                  //图表数据载入
-                  for(let i = 1; i <= this.selectMethod.length; i++){
-                    dat.legend.data.push("method "+i);
-                    dat.series.push({name:"method "+i,type:'line',data:res.data.data.res[i-1].grd});
-                  }
-
-                  myChart.setOption(dat);
-                
-              }
-              else{
-                  this.$notify({
-                      title: '注意',
-                      message: res.data.msg,
-                      type: 'warning',
-                      offset: 100
-                  });
-                  this.isUpdate=0;
-              }
-          }).catch((error) =>{
-              this.$notify.error({
-                  title: '错误',
-                  message: error,
-                  duration: 0,
-                  offset: 100
-              });
-              this.isUpdate=-1;
+          this.$notify({
+            title: '提示',
+            message: '该统计模块已移除',
+            type: 'info',
+            offset: 100
           });
         },
         initShow_16(){
-          //获取数据
-          var url = restweburl + 'getMethodPerGRD';
-          axios({
-              url: url,
-              method: "post",
-              data:{
-                bID:this.$route.params.bID,
-                selectMethods:this.selectMethod,
-              }
-          })
-          .then(async (res) => {
-              if(res.data.msg==='success'){
-                  // 基于准备好的dom，初始化echarts实例
-                  var myChart;
-                  myChart = echarts.init(document.getElementById('最大个人剂量对比'));
-                  
-                 // 准备x轴数据
-                 var xAxisData = [];
-                 for (var i = 1; i <= this.selectMethod.length; i++) {
-                     xAxisData.push('method ' + i);
-                 }
-
-                 // 准备y轴数据
-                 var seriesData = [];
-                 for (let j = 0; j < this.selectMethod.length; j++) {
-                     seriesData.push(res.data.data.res[j].max_grd);
-                 }
-                   // 绘制图表
-                   var dat = {
-                     title: {
-                         text: '最大个人剂量对比/mSv'
-                     },
-                     tooltip: {},
-                     legend: {
-                         data: ['剂量']
-                     },
-                     xAxis: {
-                         data: xAxisData
-                     },
-                     yAxis: {},
-                     series: [{
-                         name: '剂量/mSV',
-                         type: 'bar',
-                         data: seriesData
-                     }]
-                 };
-
-                 // 图表数据载入
-                 myChart.setOption(dat);
-                
-              }
-              else{
-                  this.$notify({
-                      title: '注意',
-                      message: res.data.msg,
-                      type: 'warning',
-                      offset: 100
-                  });
-                  this.isUpdate=0;
-              }
-          }).catch((error) =>{
-              this.$notify.error({
-                  title: '错误',
-                  message: error,
-                  duration: 0,
-                  offset: 100
-              });
-              this.isUpdate=-1;
+          this.$notify({
+            title: '提示',
+            message: '该统计模块已移除',
+            type: 'info',
+            offset: 100
           });
         },
         initShow_19(){
@@ -4517,7 +4118,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
         //   });
         // },
         formatToScientificNotation(cellValue) {
-          var num = parseFloat(cellValue.grd);
+          var num = parseFloat(cellValue.value);
           if (num !== null && num !== undefined && !isNaN(num)) {
             // 格式化为科学计数法，保留5位小数
             return num.toExponential(5).replace('e', ' e').replace('E', ' E');
@@ -4525,7 +4126,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           return num.toString();
         },
         formatToScientificNotationpre(cellValue) {
-          var num = parseFloat(cellValue.now_pre_grd);
+          var num = parseFloat(cellValue.value);
           if (num !== null && num !== undefined && !isNaN(num)) {
             // 格式化为科学计数法，保留5位小数
             return num.toExponential(5).replace('e', ' e').replace('E', ' E');
@@ -4585,10 +4186,9 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
                 navPos:this.init_navs(allFloors.pointsNav),
                 rooms:this.init_rooms(allFloors.rooms),
                 peos:this.init_poes(allFloors.peos),
-                connectors:this.init_connectors(),
-                weight:this.simulateConfig[0].weight,
-                numMax:this.simulateConfig[2].weight,
-                numMin:this.simulateConfig[1].weight,
+    
+                numMax:this.simulateConfig[1].weight,
+                numMin:this.simulateConfig[0].weight,
                 imgX0:this.viewInfo.imgX0,
                 imgY0:this.viewInfo.imgY0,
                 st:this.nST.sT,
@@ -4669,32 +4269,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           })
           return temp_nav;
         },
-        init_connectors(){
-          var temp_connectors = JSON.parse(JSON.stringify(this.connectors || []));
-          temp_connectors.forEach(connector => {
-            if (connector.entryX !== undefined) {
-              connector.entryX = (connector.entryX - this.viewInfo.imgX0) * this.nST.sT;
-            } else if (connector.x !== undefined) {
-              connector.entryX = (connector.x - this.viewInfo.imgX0) * this.nST.sT;
-            }
-            if (connector.entryY !== undefined) {
-              connector.entryY = (connector.entryY - this.viewInfo.imgY0) * this.nST.sT;
-            } else if (connector.y !== undefined) {
-              connector.entryY = (connector.y - this.viewInfo.imgY0) * this.nST.sT;
-            }
-            if (connector.exitX !== undefined) {
-              connector.exitX = (connector.exitX - this.viewInfo.imgX0) * this.nST.sT;
-            } else {
-              connector.exitX = connector.entryX;
-            }
-            if (connector.exitY !== undefined) {
-              connector.exitY = (connector.exitY - this.viewInfo.imgY0) * this.nST.sT;
-            } else {
-              connector.exitY = connector.entryY;
-            }
-          });
-          return temp_connectors;
-        },
+
         init_rooms(rooms = this.rooms){
           var temp_rooms = JSON.parse(JSON.stringify(rooms || []));
           temp_rooms.forEach(room => {
@@ -4774,16 +4349,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           })
           return temp_nav;
         },
-        back_connectors(connectors,imgX0,imgY0,sT){
-          var temp_connectors = JSON.parse(JSON.stringify(connectors || []));
-          temp_connectors.forEach(connector => {
-            connector.entryX = (connector.entryX ?? connector.x ?? 0) / sT + imgX0;
-            connector.entryY = (connector.entryY ?? connector.y ?? 0) / sT + imgY0;
-            connector.exitX = (connector.exitX ?? connector.entryX) / sT + imgX0;
-            connector.exitY = (connector.exitY ?? connector.entryY) / sT + imgY0;
-          });
-          return temp_connectors;
-        },
+
         back_rooms(rooms,imgX0,imgY0,sT){
           var temp_rooms = JSON.parse(JSON.stringify(rooms));
           temp_rooms.forEach(room => {
@@ -4926,94 +4492,69 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
           });
         },
 
-        openAnimationSetting(){
-          const options = this.buildAnimationPlanOptions();
-          if(!options.length){
-            this.$notify({
-              title:'提示',
-              message:'暂无可播放的出口方案，请先完成“出口方案选择”。',
-              type:'warning',
-              offset:100
+        async openAnimationSetting(){
+          const projectId = this.$route.params.bID;
+          try {
+            const res = await axios.get(restweburl + 'api/project/listMethods/' + projectId);
+            const methods = res.data || [];
+            
+            if(!methods.length){
+              this.$notify({
+                title:'提示',
+                message:'暂无可播放的出口方案，请先完成“方案模拟”。',
+                type:'warning',
+                offset:100
+              });
+              return;
+            }
+
+            // 将目录名转换为选项
+            this.animationSetting.plans = methods.map(name => {
+              // 尝试美化名称，如果是 "1,2,3/0" 这种格式
+              const parts = name.split('/');
+              const exitIds = parts[0];
+              const label = `方案（出口：${exitIds}）` + (parts[1] ? ` - 轮次${parts[1]}` : '');
+              return {
+                label: label,
+                value: name
+              };
             });
-            return;
+
+            if(!this.animationSetting.plans.some(opt => opt.value === this.animationSetting.plan)){
+              this.animationSetting.plan = this.animationSetting.plans[0].value;
+            }
+            this.animationSetting.color = this.drawConfig[9].color;
+            this.dialogVisible_2 = true;
+          } catch (e) {
+            this.$message.error('获取方案列表失败');
           }
-          this.animationSetting.plans = options;
-          if(!options.some(opt => opt.value === this.animationSetting.plan)){
-            this.animationSetting.plan = options[0].value;
-          }
-          this.animationSetting.color = this.drawConfig[9].color;
-          this.dialogVisible_2 = true;
-        },
-        buildAnimationPlanOptions(){
-          const baseList = this.selectMethodDetail.length ? this.selectMethodDetail : this.selectMethodALLResult;
-          const options = [];
-          baseList.forEach((item, idx) => {
-            if(!item || !item.method){ return; }
-            const methodStr = String(item.method || '').trim();
-            const exitIds = methodStr
-              ? methodStr.split(',').map(s => s.trim()).filter(Boolean)
-              : [];
-            const exitIdsText = exitIds.join(',');
-            const label = `方案${idx + 1}（${exitIdsText}）`;
-            options.push({
-              label,
-              value: methodStr,
-              isCustom: true
-            });
-          });
-          return options;
         },
         async confirmAnimationSetting(){
           if(!this.animationSetting.plan){
             this.$message.warning('请选择出口方案');
             return;
           }
-          const selected = this.animationSetting.plans.find(item => item.value === this.animationSetting.plan);
-          const playbackMethod = selected ? selected.value : this.animationSetting.plan;
-          try{
-            await this.prepareCustomPlaybackPlan(playbackMethod);
-          }catch(e){
-            this.$notify.error({
-              title:'错误',
-              message:e && e.message ? e.message : '方案准备失败',
-              offset:100,
-              duration:0
-            });
-            return;
-          }
+          const selectedPlan = this.animationSetting.plan;
+          
           if(this.animationSetting.color){
             this.drawConfig[9].color = this.animationSetting.color;
             this.drawConfig[10].color = this.animationSetting.color;
           }
           this.playbackConfig = {
-            // 只保留“时间优先”的动画播放
             scheme: 'time',
-            file: '1',
+            file: selectedPlan,
             status: 1
           };
           this.animationState = 'paused';
           this.TID = 11;
           this.dialogVisible_2 = false;
         },
-        async prepareCustomPlaybackPlan(method){
-          if(!method){
-            return;
-          }
-          await axios({
-            url: restweburl + 'saveMethod',
-            method:'post',
-            data:{
-              bID:this.$route.params.bID,
-              selectMethod:method,
-              selectMethods:[method]
-            }
-          });
-        },
         startAnimationPlayback(config){
           const scheme = config.scheme || 'time';
           const payload = {
             file: config.file || '1',
-            status: config.status || 1
+            status: config.status || 1,
+            useWebSocket: false
           };
           const map = {
             time:'playBack'
@@ -5103,7 +4644,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
                     rooms:this.init_rooms(),
                     navPos:this.init_navs(),
                     peos:this.init_poes(),
-                    connectors:this.init_connectors(),
+
                 }
             })
             .then(async (res) => {
@@ -5210,7 +4751,6 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
       this.peos=JSON.parse(JSON.stringify(this.backup.peos));
       this.rooms=JSON.parse(JSON.stringify(this.backup.rooms));
       this.exits=JSON.parse(JSON.stringify(this.backup.exits));
-      this.connectors=JSON.parse(JSON.stringify(this.backup.connectors || []));
       this.pointsNav=JSON.parse(JSON.stringify(this.backup.pointsNav));
       this.pointsNavView=JSON.parse(JSON.stringify(this.backup.pointsNavView));
       this.viewInfo=JSON.parse(JSON.stringify(this.backup.viewInfo));
@@ -5232,7 +4772,7 @@ import { ThreeFloorViewer } from '../three/ThreeFloorViewer';
       // 关闭WebSocket连接
       if(this.socket){
         try{
-          this.socket.disconnect();
+          this.socket.close();
         }catch(e){
           console.log(e);
         }
@@ -8237,7 +7777,7 @@ if(this.TID==31||this.TID==29){
     },
     setOptions(){
       this.numberOptions = [];
-      for(let i = this.simulateConfig[1].weight; i <= this.simulateConfig[2].weight; i++){
+      for(let i = this.simulateConfig[0].weight; i <= this.simulateConfig[1].weight; i++){
         this.numberOptions.push(i);
         this.selectedNumber.push(i);
       }
@@ -9002,7 +8542,7 @@ if(this.TID==31||this.TID==29){
             exit:this.init_exit(allFloors.exits),
             rooms:this.init_rooms(allFloors.rooms),
             peos:this.init_poes(allFloors.peos),
-            connectors:this.init_connectors(),
+
             scale:this.viewInfo.sT/70,
             viewInfo:this.viewInfo,
             sT:parseFloat(this.nST.sT),
@@ -9169,7 +8709,7 @@ if(this.TID==31||this.TID==29){
             exit:this.init_exit(),
             rooms:this.init_rooms(),
             peos:this.init_poes(),
-            connectors:this.init_connectors(),
+
             scale:this.viewInfo.sT/70,
             viewInfo:this.viewInfo,
             nST:this.nST,
@@ -9268,8 +8808,15 @@ if(this.TID==31||this.TID==29){
         // alert(this.radio_mode)
         this.init_show();
         this.heatInit();
+        this.replay3D = { ready: false, prevById: new Map() };
 
-        if(this.radio_mode=='在线模式'){
+        const useWebSocket = options.useWebSocket === true;
+        if (this.socket && !useWebSocket) {
+          try { this.socket.close(); } catch (e) { this.socket = null; }
+          this.socket = null;
+        }
+
+        if(this.radio_mode=='在线模式' && useWebSocket){
           this.status = statusParam;
           this.initWebSocket(fileParam);
         }
@@ -9300,7 +8847,6 @@ if(this.TID==31||this.TID==29){
             this.backup.peos = JSON.parse(JSON.stringify(this.peos));
             this.backup.rooms=JSON.parse(JSON.stringify(this.rooms));
             this.backup.exits=JSON.parse(JSON.stringify(this.exits));
-            this.backup.connectors=JSON.parse(JSON.stringify(this.connectors));
             this.backup.pointsNav=JSON.parse(JSON.stringify(this.pointsNav));
             this.backup.pointsNavView=JSON.parse(JSON.stringify(this.pointsNavView));
             this.backup.viewInfo=JSON.parse(JSON.stringify(this.viewInfo)); 
@@ -9316,10 +8862,10 @@ if(this.TID==31||this.TID==29){
             this.rooms = this.back_rooms(res.data.data.frame.rooms,res.data.data.frame.viewInfo.imgX0,res.data.data.frame.viewInfo.imgY0,res.data.data.frame.nST.sT);
             this.exits = this.back_exit(res.data.data.frame.exit,res.data.data.frame.viewInfo.imgX0,res.data.data.frame.viewInfo.imgY0,res.data.data.frame.nST.sT);
             this.pointsNav = this.back_navs(res.data.data.frame.navPos,res.data.data.frame.viewInfo.imgX0,res.data.data.frame.viewInfo.imgY0,res.data.data.frame.nST.sT);
-            this.connectors = this.back_connectors(res.data.data.frame.connectors, res.data.data.frame.viewInfo.imgX0, res.data.data.frame.viewInfo.imgY0, res.data.data.frame.nST.sT);
             this.viewInfo = res.data.data.frame.viewInfo;
             //this.viewInfo.isViewKs = false;
             this.nST = res.data.data.frame.nST;
+            this.initFloorStoreFromCurrentArrays();
             this.draw();
             if (this.view3D.enabled) {
               this.syncThreeSceneData();
@@ -9699,11 +9245,18 @@ if(this.TID==31||this.TID==29){
 
       if(clipNum+buff>this.show.clips.length)
         buff=this.show.clips.length-clipNum;
+
+      const socketOpen = this.socket && typeof this.socket.send === 'function' && this.socket.readyState === WebSocket.OPEN;
       for(let i=clipNum;i<=clipNum+buff;i++){
         this.socketState=1;
-        this.sendSocket({bID:this.$route.params.bID,flat:i});
-        while(this.socketState==1){
-          await this.deadlock();
+        if (socketOpen) {
+          this.sendSocket({bID:this.$route.params.bID,flat:i});
+          while(this.socketState==1){
+            await this.deadlock();
+          }
+        } else {
+          await this.fetchReplayFlat(i);
+          this.socketState=0;
         }
       }
       this.show.nowBusy=0;
@@ -9711,9 +9264,14 @@ if(this.TID==31||this.TID==29){
       this.alwaysRun();
       for(let i=clipNum+buff+1;i<=this.show.clips.length;i++){
         this.socketState=1;
-        this.sendSocket({bID:this.$route.params.bID,flat:i});
-        while(this.socketState==1){
-          await this.deadlock();
+        if (socketOpen) {
+          this.sendSocket({bID:this.$route.params.bID,flat:i});
+          while(this.socketState==1){
+            await this.deadlock();
+          }
+        } else {
+          await this.fetchReplayFlat(i);
+          this.socketState=0;
         }
       }
       // 安全关闭 WebSocket 连接

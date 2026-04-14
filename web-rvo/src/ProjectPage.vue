@@ -29,7 +29,7 @@
               <el-dropdown-item @click.native="TID=7" :disabled="TID==11||TID==19||TID==10">新建集合点</el-dropdown-item>
               <el-dropdown-item @click.native="TID=20" :disabled="TID==11||TID==19||TID==10">新建统计框</el-dropdown-item>
               <el-dropdown-item @click.native="TID=22" :disabled="TID==11||TID==19||TID==10">新建人口框</el-dropdown-item>
-              <el-dropdown-item @click.native="openConnectorDialog()" :disabled="TID==11||TID==19||TID==10">新建楼梯/电梯</el-dropdown-item>
+
               <el-dropdown-item @click.native="openNewFloorDialog()" :disabled="TID==11||TID==19||TID==10">新建楼层</el-dropdown-item>
               <el-dropdown-item @click.native="statistic=true,calc()" :disabled="TID==11||TID==19||TID==10">统计信息</el-dropdown-item>
             </el-dropdown-menu>
@@ -69,7 +69,7 @@
             </el-button>
             <el-dropdown-menu slot="dropdown">
               <el-dropdown-item v-if="TID!=11&& TID!=19" :disabled="TID==10" @click.native="openAnimationSetting">动画展示</el-dropdown-item>
-              <el-dropdown-item v-if="TID!=11&& TID!=19" :disabled="TID==10" @click.native="dialogVisible_6=true;smode='查看方案';show_method()">查看方案</el-dropdown-item>
+
               <el-dropdown-item @click.native="dialogVisible_attr_show_1=true;smode='人数';initShow()">撤离人数-时间</el-dropdown-item>
               <el-dropdown-item @click.native="dialogVisible_attr_show_3=true">区域密度-时间</el-dropdown-item>
               <el-dropdown-item @click.native="dialogVisible_attr_show_4=true;smode='人数';initShow_4()">撤离时间-人数</el-dropdown-item>
@@ -163,6 +163,16 @@
               <el-radio-button label="cylinder">圆柱</el-radio-button>
               <el-radio-button label="none">空</el-radio-button>
             </el-radio-group>
+            <span style="margin-left:8px">传送时长(ms)</span>
+            <el-input-number
+              v-model="view3D.teleportDurationMs"
+              size="mini"
+              :step="50"
+              :min="50"
+              :max="5000"
+              controls-position="right"
+              style="width:140px"
+            ></el-input-number>
             <template v-if="view3D.replayAgentStyle === 'cylinder'">
               <span style="margin-left:8px">半径</span>
               <el-input-number
@@ -199,67 +209,7 @@
       <el-button type="danger" size="mini" :disabled="navEdit.selectedIndex<0" @click="deleteSelectedNavPoint">删除选中导航点</el-button>
       <el-button type="primary" size="mini" @click="finishNavEdit">结束编辑</el-button>
     </div>
-    <div v-if="dialogVisible_connector">
-      <el-dialog title="新建楼梯/电梯" :visible.sync="dialogVisible_connector" width="560px" :append-to-body="true">
-        <el-button type="primary" size="small" @click="addConnector()" style="margin-bottom:12px">新建连接器</el-button>
-        <el-table :data="connectors" size="mini" border max-height="240">
-          <el-table-column prop="id" label="ID" width="50"></el-table-column>
-          <el-table-column prop="type" label="类型" width="80">
-            <template slot-scope="scope">{{ scope.row.type === 2 ? '电梯' : '楼梯' }}</template>
-          </el-table-column>
-          <el-table-column prop="fromFloor" label="起始层" width="70"></el-table-column>
-          <el-table-column prop="toFloor" label="目标层" width="70"></el-table-column>
-          <el-table-column label="入口(x,y)" width="120">
-            <template slot-scope="scope">{{ (scope.row.entryX||scope.row.x||0).toFixed(1) }}, {{ (scope.row.entryY||scope.row.y||0).toFixed(1) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="120">
-            <template slot-scope="scope">
-              <el-button type="text" size="mini" @click="editConnector(scope.$index)">编辑</el-button>
-              <el-button type="text" size="mini" style="color:#f56c6c" @click="deleteConnector(scope.$index)">删除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <div v-if="connectorEdit.active" style="margin-top:16px; padding:12px; background:#f5f7fa; border-radius:4px">
-          <div style="margin-bottom:8px; font-weight:bold">{{ connectorEdit.isNew ? '新建连接器' : '编辑连接器' }}</div>
-          <el-form label-width="90px" size="mini">
-            <el-form-item label="类型">
-              <el-radio-group v-model="connectorEdit.type">
-                <el-radio :label="1">楼梯</el-radio>
-                <el-radio :label="2">电梯</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item label="起始楼层">
-              <el-input-number v-model="connectorEdit.fromFloor" :min="0" :max="20" controls-position="right"></el-input-number>
-            </el-form-item>
-            <el-form-item label="目标楼层">
-              <el-input-number v-model="connectorEdit.toFloor" :min="0" :max="20" controls-position="right"></el-input-number>
-            </el-form-item>
-            <el-form-item label="入口 X">
-              <el-input-number v-model="connectorEdit.entryX" :precision="2" controls-position="right" style="width:100%"></el-input-number>
-            </el-form-item>
-            <el-form-item label="入口 Y">
-              <el-input-number v-model="connectorEdit.entryY" :precision="2" controls-position="right" style="width:100%"></el-input-number>
-            </el-form-item>
-            <el-form-item label="出口 X">
-              <el-input-number v-model="connectorEdit.exitX" :precision="2" controls-position="right" style="width:100%"></el-input-number>
-            </el-form-item>
-            <el-form-item label="出口 Y">
-              <el-input-number v-model="connectorEdit.exitY" :precision="2" controls-position="right" style="width:100%"></el-input-number>
-            </el-form-item>
-            <el-form-item label="容量">
-              <el-input-number v-model="connectorEdit.capacity" :min="1" :max="50" controls-position="right"></el-input-number>
-            </el-form-item>
-            <el-form-item label="通过时间(s)">
-              <el-input-number v-model="connectorEdit.serviceTime" :min="0" :precision="1" controls-position="right"></el-input-number>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" size="mini" @click="saveConnector()">保存</el-button>
-              <el-button size="mini" @click="cancelConnectorEdit()">取消</el-button>
-            </el-form-item>
-          </el-form>
-        </div>
-      </el-dialog>
-    </div>
+
 
     <div v-if="dialogVisible_newFloor">
       <el-dialog title="新建楼层" :visible.sync="dialogVisible_newFloor" width="520px" :append-to-body="true">
@@ -730,7 +680,7 @@
           <el-radio-button label="graph">图表</el-radio-button>
           <el-radio-button label="data">原始数据</el-radio-button>
         </el-radio-group>
-        <div v-show="tabPosition === 'graph'" class="chart-container" id="受照剂量-时间(时间优先)"></div>
+        <div v-show="tabPosition === 'graph'" class="chart-container" id="区域密度-时间"></div>
         <div v-show="tabPosition === 'data'" class="data-container">
           <el-button @click="exportExcel()" style="float: left;">下载</el-button>
           <div class="table-container">
@@ -859,7 +809,7 @@
           <el-radio-button label="graph">图表</el-radio-button>
           <el-radio-button label="data">原始数据</el-radio-button>
         </el-radio-group>
-        <div v-show="tabPosition === 'graph'" class="chart-container" id="受照剂量-人数直方图(时间优先)"></div>
+        <div v-show="tabPosition === 'graph'" class="chart-container" id="方案一-备用统计"></div>
         <div v-show="tabPosition === 'data'" class="data-container">
           <el-button @click="exportExcel()" style="float: left;">下载</el-button>
           <div class="table-container">
@@ -894,7 +844,7 @@
           <el-radio-button label="graph">图表</el-radio-button>
           <el-radio-button label="data">原始数据</el-radio-button>
         </el-radio-group>
-        <div v-show="tabPosition === 'graph'" class="chart-container" id="撤离人数-时间(剂量优先)"></div>
+        <div v-show="tabPosition === 'graph'" class="chart-container" id="撤离人数-时间(方案二)"></div>
         <div v-show="tabPosition === 'data'" class="data-container">
           <el-button @click="exportExcel()" style="float: left;">下载</el-button>
           <div class="table-container">
@@ -929,7 +879,7 @@
           <el-radio-button label="graph">图表</el-radio-button>
           <el-radio-button label="data">原始数据</el-radio-button>
         </el-radio-group>
-        <div v-show="tabPosition === 'graph'" class="chart-container" id="受照剂量-时间(剂量优先)"></div>
+        <div v-show="tabPosition === 'graph'" class="chart-container" id="方案二-备用统计"></div>
         <div v-show="tabPosition === 'data'" class="data-container">
           <el-button @click="exportExcel()" style="float: left;">下载</el-button>
           <div class="table-container">
@@ -964,7 +914,7 @@
           <el-radio-button label="graph">图表</el-radio-button>
           <el-radio-button label="data">原始数据</el-radio-button>
         </el-radio-group>
-        <div v-show="tabPosition === 'graph'" class="chart-container" id="撤离人数-时间直方图(剂量优先)"></div>
+        <div v-show="tabPosition === 'graph'" class="chart-container" id="撤离人数-时间直方图(方案二)"></div>
         <div v-show="tabPosition === 'data'" class="data-container">
           <el-button @click="exportExcel()" style="float: left;">下载</el-button>
           <div class="table-container">
@@ -999,7 +949,7 @@
           <el-radio-button label="graph">图表</el-radio-button>
           <el-radio-button label="data">原始数据</el-radio-button>
         </el-radio-group>
-        <div v-show="tabPosition === 'graph'" class="chart-container" id="受照剂量-人数直方图(剂量优先)"></div>
+        <div v-show="tabPosition === 'graph'" class="chart-container" id="方案二-备用分布"></div>
         <div v-show="tabPosition === 'data'" class="data-container">
           <el-button @click="exportExcel()" style="float: left;">下载</el-button>
           <div class="table-container">
@@ -1034,7 +984,7 @@
           <el-radio-button label="graph">图表</el-radio-button>
           <el-radio-button label="data">原始数据</el-radio-button>
         </el-radio-group>
-        <div v-show="tabPosition === 'graph'" class="chart-container" id="撤离人数-时间(最大剂量最小优先)"></div>
+        <div v-show="tabPosition === 'graph'" class="chart-container" id="撤离人数-时间(方案三)"></div>
         <div v-show="tabPosition === 'data'" class="data-container">
           <el-button @click="exportExcel()" style="float: left;">下载</el-button>
           <div class="table-container">
@@ -1069,7 +1019,7 @@
           <el-radio-button label="graph">图表</el-radio-button>
           <el-radio-button label="data">原始数据</el-radio-button>
         </el-radio-group>
-        <div v-show="tabPosition === 'graph'" class="chart-container" id="受照剂量-时间(最大剂量最小优先)"></div>
+        <div v-show="tabPosition === 'graph'" class="chart-container" id="方案三-备用统计"></div>
         <div v-show="tabPosition === 'data'" class="data-container">
           <el-button @click="exportExcel()" style="float: left;">下载</el-button>
           <div class="table-container">
@@ -1104,7 +1054,7 @@
           <el-radio-button label="graph">图表</el-radio-button>
           <el-radio-button label="data">原始数据</el-radio-button>
         </el-radio-group>
-        <div v-show="tabPosition === 'graph'" class="chart-container" id="撤离人数-时间直方图(最大剂量最小优先)"></div>
+        <div v-show="tabPosition === 'graph'" class="chart-container" id="撤离人数-时间直方图(方案三)"></div>
         <div v-show="tabPosition === 'data'" class="data-container">
           <el-button @click="exportExcel()" style="float: left;">下载</el-button>
           <div class="table-container">
@@ -1139,7 +1089,7 @@
           <el-radio-button label="graph">图表</el-radio-button>
           <el-radio-button label="data">原始数据</el-radio-button>
         </el-radio-group>
-        <div v-show="tabPosition === 'graph'" class="chart-container" id="受照剂量-人数直方图(最大剂量最小优先)"></div>
+        <div v-show="tabPosition === 'graph'" class="chart-container" id="方案三-备用分布"></div>
         <div v-show="tabPosition === 'data'" class="data-container">
           <el-button @click="exportExcel()" style="float: left;">下载</el-button>
           <div class="table-container">
@@ -1161,43 +1111,7 @@
   </div>
 </div>
 
-<div class="dialog-content-container" v-show="dialogVisible_6">
-  <div class="dialog-content">
-    <!-- 关闭按钮 -->
-    <div class="close-btn-container" @click="closeMethod">
-        <el-button type="text" class="close-btn" style="float: right;margin-right: 10px">
-          <i class="el-icon-close"></i>
-        </el-button>
-      </div>
-    <el-tabs type="border-card" :v-model="typeChoose" @tab-click="selectShow">
-      <div>
-        <div class="data-container">
-          <div class="table-container">
-            <el-table
-              :data="table_raw_method"
-              style="width: 100%"
-            >
-            <el-table-column
-              type="index"
-              label="序号"
-            ></el-table-column>
-            <!-- 指标列 -->
-            <el-table-column
-              prop="indicator"
-              label="指标"
-            ></el-table-column>
-            <!-- 模拟数据列 -->
-            <el-table-column
-              prop="simulatedData"
-              label="模拟数据"
-            ></el-table-column>
-            </el-table>
-          </div>
-        </div>
-      </div>
-    </el-tabs>
-  </div>
-</div>
+
 <div class="dialog-content-container" v-show="dialogVisible_7">
   <div class="dialog-content">
     <!-- 关闭按钮 -->
@@ -1305,11 +1219,11 @@
             ></el-table-column>
             <el-table-column
               prop="method2"
-              label="剂量优先方案"
+              label="方案二"
             ></el-table-column>
             <el-table-column
               prop="method3"
-              label="个人剂量最小优先方案"
+              label="方案三"
             ></el-table-column>
             </el-table>
           </div>
@@ -1332,39 +1246,6 @@
     <el-tabs type="border-card" :v-model="typeChoose" @tab-click="selectShow">
       <div>
         <div class="chart-container" id="撤离时间对比"></div>
-      </div>
-    </el-tabs>
-  </div>
-</div>
-<div class="dialog-content-container" v-show="dialogVisible_attr_show_15">
-  <div class="dialog-content">
-    <!-- 关闭按钮 -->
-    <div class="close-btn-container" @click="closeMethod_5">
-        <el-button type="text" class="close-btn" style="float: right;margin-right: 10px">
-          <i class="el-icon-close"></i>
-        </el-button>
-      </div>
-      <div class="table-title">
-            <h3>受照剂量对比</h3>
-          </div>
-    <el-tabs type="border-card" :v-model="typeChoose" @tab-click="selectShow">
-      <div>
-        <div class="chart-container" id="受照剂量对比"></div>
-      </div>
-    </el-tabs>
-  </div>
-</div>
-<div class="dialog-content-container" v-show="dialogVisible_attr_show_16">
-  <div class="dialog-content">
-    <!-- 关闭按钮 -->
-    <div class="close-btn-container" @click="closeMethod_6">
-        <el-button type="text" class="close-btn" style="float: right;margin-right: 10px">
-          <i class="el-icon-close"></i>
-        </el-button>
-      </div>
-    <el-tabs type="border-card" :v-model="typeChoose" @tab-click="selectShow">
-      <div>
-        <div class="chart-container" id="最大个人剂量对比"></div>
       </div>
     </el-tabs>
   </div>
@@ -1439,62 +1320,6 @@
       <span slot="footer" class="dialog-footer">
           <el-button @click="dialogVisible_2 = false">取 消</el-button>
           <el-button type="primary" @click="confirmAnimationSetting">开 始</el-button>
-      </span>
-  </el-dialog>
-  <el-dialog
-      title="动画模拟"
-      :visible.sync="dialogVisible_4"
-      width="40%"
-      center
-      >
-      <div>
-        <!-- <el-radio-group v-model="radio_mode" style="display: flex;justify-content: center;">
-          <el-radio-button label="在线模式"></el-radio-button>
-          <el-radio-button label="本地模式"></el-radio-button>
-        </el-radio-group> -->
-      </div>
-      <div v-if="radio_mode=='在线模式'">
-        <!-- <h3 style="text-align:center">在线模式无需下载，但在大数据量情况可能造成卡顿</h3> -->
-        <h3 style="text-align:center">使用动画模拟撤离全部流程</h3>
-      </div>
-        <!-- <div v-if="radio_mode=='本地模式'">
-          <h3 style="text-align:center">本地模式需要先下载动画资料</h3>
-          动画文件：<el-button @click="download()">下载</el-button>
-          <div>
-            已下载：<input type="file" id="fileInput">
-          </div>
-        </div> -->
-      <span slot="footer" class="dialog-footer">
-          <el-button @click="dialogVisible_4 = false">取 消</el-button>
-          <el-button type="primary" @click="dialogVisible_4 = false;TID=11,playBack_1()">确 定</el-button>
-      </span>
-  </el-dialog>
-  <el-dialog
-      title="动画模拟"
-      :visible.sync="dialogVisible_5"
-      width="40%"
-      center
-      >
-      <div>
-        <!-- <el-radio-group v-model="radio_mode" style="display: flex;justify-content: center;">
-          <el-radio-button label="在线模式"></el-radio-button>
-          <el-radio-button label="本地模式"></el-radio-button>
-        </el-radio-group> -->
-        <div v-if="radio_mode=='在线模式'">
-          <!-- <h3 style="text-align:center">在线模式无需下载，但在大数据量情况可能造成卡顿</h3> -->
-          <h3 style="text-align:center">使用动画模拟撤离全部流程</h3>
-        </div>
-      </div>
-        <!-- <div v-if="radio_mode=='本地模式'">
-          <h3 style="text-align:center">本地模式需要先下载动画资料</h3>
-          动画文件：<el-button @click="download()">下载</el-button>
-          <div>
-            已下载：<input type="file" id="fileInput">
-          </div>
-        </div> -->
-      <span slot="footer" class="dialog-footer">
-          <el-button @click="dialogVisible_5 = false">取 消</el-button>
-          <el-button type="primary" @click="dialogVisible_5 = false;TID=11,playBack_2()">确 定</el-button>
       </span>
   </el-dialog>
   <el-dialog

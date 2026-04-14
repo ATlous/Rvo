@@ -81,4 +81,5 @@ rvo/source/*/output.json
 rvo/source/*/frame.json
 rvo/source/*/replayData.json
 rvo/source/*/replayData.txt
+rvo/source/*/statistic/
 rvo/source/*

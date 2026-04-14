@@ -7,7 +7,9 @@
 #include <cstdlib>
 #include <iomanip>
 #include <filesystem>
+#include <limits>
 #include <numeric>
+#include <regex>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -32,29 +34,88 @@ namespace {
         return 0;
     }
 
-    void parseExitKeyName(const std::string& name, int& outFloorKey, int& outAssemblyNum, std::string& outTeleport) {
-        outFloorKey = 0;
-        outAssemblyNum = 0;
-        outTeleport.clear();
-        if (name.empty()) {
-            return;
-        }
-        std::vector<std::string> parts;
-        std::stringstream ss(name);
-        std::string item;
-        while (std::getline(ss, item, '-')) {
-            parts.push_back(item);
-        }
-        if (parts.size() >= 2) {
-            outFloorKey = std::atoi(parts[0].c_str());
-            outAssemblyNum = std::atoi(parts[1].c_str());
-            if (parts.size() >= 3) {
-                outTeleport = parts[2];
+    int resolveExitIndex(const std::vector<rvocpp::Exit>& exits, int exitRef) {
+        for (size_t idx = 0; idx < exits.size(); ++idx) {
+            if (static_cast<int>(exits[idx].id) == exitRef) {
+                return static_cast<int>(idx);
             }
-        } else {
-            outAssemblyNum = std::atoi(name.c_str());
         }
+        if (exitRef >= 0 && exitRef < static_cast<int>(exits.size())) {
+            return exitRef;
+        }
+        return -1;
     }
+
+    int parseAssemblyNumber(const rvocpp::Exit& exit, int fallback) {
+        if (!exit.name.empty()) {
+            // Support both positive and negative floor formats, e.g. "2-4-F1" / "-1-1-F1".
+            static const std::regex kPattern(R"(^\s*([+-]?\d+)\s*-\s*([+-]?\d+)\s*(?:-\s*(\S+)\s*)?$)");
+            std::smatch match;
+            if (std::regex_match(exit.name, match, kPattern) && match.size() >= 3) {
+                try {
+                    return std::stoi(match[2].str());
+                } catch (...) {
+                    // Fall back below.
+                }
+            }
+            try {
+                return std::stoi(exit.name);
+            } catch (...) {
+                // Fall back below.
+            }
+        }
+        return fallback;
+    }
+
+    std::pair<double, double> exitCenter(const rvocpp::Exit& exit) {
+        return {(exit.x0 + exit.x1) * 0.5, (exit.y0 + exit.y1) * 0.5};
+    }
+
+    int findExitOnFloorByAssembly(const std::vector<rvocpp::Exit>& exits, int floorId, int assemblyNum) {
+        for (int i = 0; i < static_cast<int>(exits.size()); ++i) {
+            if (exits[static_cast<size_t>(i)].floorId != floorId) {
+                continue;
+            }
+            const int candidateAssembly = parseAssemblyNumber(exits[static_cast<size_t>(i)], i);
+            if (candidateAssembly == assemblyNum) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    int findBestRerouteExitOnCurrentFloor(const std::vector<rvocpp::Exit>& exits,
+                                          int currentFloorId,
+                                          int nextFloorId,
+                                          double fromX,
+                                          double fromY,
+                                          int currentExitIndex) {
+        int bestExit = -1;
+        double bestDistSq = std::numeric_limits<double>::infinity();
+        for (int i = 0; i < static_cast<int>(exits.size()); ++i) {
+            if (i == currentExitIndex) {
+                continue;
+            }
+            const auto& candidate = exits[static_cast<size_t>(i)];
+            if (candidate.floorId != currentFloorId) {
+                continue;
+            }
+            const int candidateAssembly = parseAssemblyNumber(candidate, i);
+            if (findExitOnFloorByAssembly(exits, nextFloorId, candidateAssembly) < 0) {
+                continue;
+            }
+            const auto center = exitCenter(candidate);
+            const double dx = center.first - fromX;
+            const double dy = center.second - fromY;
+            const double distSq = dx * dx + dy * dy;
+            if (distSq < bestDistSq) {
+                bestDistSq = distSq;
+                bestExit = i;
+            }
+        }
+        return bestExit;
+    }
+
 } // namespace
 
 namespace rvocpp {
@@ -712,6 +773,27 @@ void RVOSimulator::stepAgents() {
 
 void RVOSimulator::updateCompletedAgents() {
     bool anyRemoval = false;
+    auto rerouteAgentToExit = [&](int agentIndex, ActiveAgent& active, int targetExitIndex) {
+        if (agentIndex < 0 || agentIndex >= static_cast<int>(agents_.size())) {
+            return;
+        }
+        if (!navGrid_) {
+            return;
+        }
+        agents_[agentIndex].exitId = targetExitIndex;
+        agentGoals_[agentIndex] = getExitCenter(targetExitIndex);
+        agents_[agentIndex].waypointXs.clear();
+        agents_[agentIndex].waypointYs.clear();
+        agents_[agentIndex].waypointCursor = 0;
+        const int gv = navGrid_->findClosestGraphVertex(active.x, active.y, true);
+        agents_[agentIndex].graphNodeIndex = gv;
+        const auto coords = navGrid_->getWaypointCoordinates(targetExitIndex, gv);
+        for (const auto& p : coords) {
+            agents_[agentIndex].waypointXs.push_back(p.first);
+            agents_[agentIndex].waypointYs.push_back(p.second);
+        }
+    };
+
     for (auto& active : activeAgents_) {
         int agentIndex = active.agentIndex;
         if (agentIndex < 0 || agentIndex >= static_cast<int>(agents_.size())) {
@@ -737,7 +819,7 @@ void RVOSimulator::updateCompletedAgents() {
             dy = target.second - active.y;
             distSq = dx * dx + dy * dy;
             if (distSq <= goalThreshold_ * goalThreshold_) {
-                const int eid = agents_[agentIndex].exitId;
+                const int eid = resolveExitIndex(exits_, agents_[agentIndex].exitId);
                 if (eid < 0 || eid >= static_cast<int>(exits_.size())) {
                     continue;
                 }
@@ -745,10 +827,6 @@ void RVOSimulator::updateCompletedAgents() {
                 if (curEx.floorId != agents_[agentIndex].floorId) {
                     continue;
                 }
-                int floorKey = 0;
-                int assemblyNum = 0;
-                std::string teleport;
-                parseExitKeyName(curEx.name, floorKey, assemblyNum, teleport);
 
                 if (agents_[agentIndex].floorId == 0) {
                     agentCompleted_[agentIndex] = true;
@@ -763,57 +841,19 @@ void RVOSimulator::updateCompletedAgents() {
                     continue;
                 }
 
-                if (teleport.empty()) {
-                    int alt = -1;
-                    for (int i = 0; i < static_cast<int>(exits_.size()); ++i) {
-                        if (i == eid) {
-                            continue;
-                        }
-                        if (exits_[static_cast<size_t>(i)].floorId != agents_[agentIndex].floorId) {
-                            continue;
-                        }
-                        int fk = 0;
-                        int an = 0;
-                        std::string t2;
-                        parseExitKeyName(exits_[static_cast<size_t>(i)].name, fk, an, t2);
-                        if (!t2.empty()) {
-                            alt = i;
-                            break;
-                        }
-                    }
-                    if (alt >= 0 && navGrid_) {
-                        agents_[agentIndex].exitId = alt;
-                        agentGoals_[agentIndex] = getExitCenter(alt);
-                        agents_[agentIndex].waypointXs.clear();
-                        agents_[agentIndex].waypointYs.clear();
-                        agents_[agentIndex].waypointCursor = 0;
-                        const int gv = navGrid_->findClosestGraphVertex(active.x, active.y, true);
-                        agents_[agentIndex].graphNodeIndex = gv;
-                        const auto coords = navGrid_->getWaypointCoordinates(alt, gv);
-                        for (const auto& p : coords) {
-                            agents_[agentIndex].waypointXs.push_back(p.first);
-                            agents_[agentIndex].waypointYs.push_back(p.second);
-                        }
-                    }
-                    continue;
-                }
-
                 const int nf = nextFloorTowardF1(agents_[agentIndex].floorId);
-                int targetExit = -1;
-                for (int i = 0; i < static_cast<int>(exits_.size()); ++i) {
-                    if (exits_[static_cast<size_t>(i)].floorId != nf) {
-                        continue;
+                const int currentAssembly = parseAssemblyNumber(curEx, eid);
+                const int targetExit = findExitOnFloorByAssembly(exits_, nf, currentAssembly);
+                if (targetExit < 0) {
+                    const int rerouteExit = findBestRerouteExitOnCurrentFloor(exits_,
+                                                                              agents_[agentIndex].floorId,
+                                                                              nf,
+                                                                              active.x,
+                                                                              active.y,
+                                                                              eid);
+                    if (rerouteExit >= 0) {
+                        rerouteAgentToExit(agentIndex, active, rerouteExit);
                     }
-                    int fk = 0;
-                    int an = 0;
-                    std::string t2;
-                    parseExitKeyName(exits_[static_cast<size_t>(i)].name, fk, an, t2);
-                    if (an == assemblyNum) {
-                        targetExit = i;
-                        break;
-                    }
-                }
-                if (targetExit < 0 || !navGrid_) {
                     continue;
                 }
                 const auto g = getExitCenter(targetExit);
@@ -828,12 +868,16 @@ void RVOSimulator::updateCompletedAgents() {
                 agents_[agentIndex].waypointXs.clear();
                 agents_[agentIndex].waypointYs.clear();
                 agents_[agentIndex].waypointCursor = 0;
-                const int gv2 = navGrid_->findClosestGraphVertex(active.x, active.y, true);
-                agents_[agentIndex].graphNodeIndex = gv2;
-                const auto coords2 = navGrid_->getWaypointCoordinates(targetExit, gv2);
-                for (const auto& p : coords2) {
-                    agents_[agentIndex].waypointXs.push_back(p.first);
-                    agents_[agentIndex].waypointYs.push_back(p.second);
+                if (navGrid_) {
+                    const int gv2 = navGrid_->findClosestGraphVertex(active.x, active.y, true);
+                    agents_[agentIndex].graphNodeIndex = gv2;
+                    const auto coords2 = navGrid_->getWaypointCoordinates(targetExit, gv2);
+                    for (const auto& p : coords2) {
+                        agents_[agentIndex].waypointXs.push_back(p.first);
+                        agents_[agentIndex].waypointYs.push_back(p.second);
+                    }
+                } else {
+                    agents_[agentIndex].graphNodeIndex = -1;
                 }
             }
         }
@@ -897,25 +941,22 @@ std::pair<double, double> RVOSimulator::getCurrentTarget(int agentIndex) const {
 }
 
 std::pair<double, double> RVOSimulator::getExitCenter(int exitId) const {
-    auto it = std::find_if(exits_.begin(), exits_.end(), [&](const Exit& e) {
-        return static_cast<int>(e.id) == exitId;
-    });
-    if (it == exits_.end()) {
+    const int idx = resolveExitIndex(exits_, exitId);
+    if (idx < 0 || idx >= static_cast<int>(exits_.size())) {
         return {0.0, 0.0};
     }
-    double centerX = (it->x0 + it->x1) / 2.0;
-    double centerY = (it->y0 + it->y1) / 2.0;
+    const auto& ex = exits_[static_cast<size_t>(idx)];
+    double centerX = (ex.x0 + ex.x1) / 2.0;
+    double centerY = (ex.y0 + ex.y1) / 2.0;
     return {centerX, centerY};
 }
 
 int RVOSimulator::getExitFloor(int exitId) const {
-    auto it = std::find_if(exits_.begin(), exits_.end(), [&](const Exit& e) {
-        return static_cast<int>(e.id) == exitId;
-    });
-    if (it == exits_.end()) {
+    const int idx = resolveExitIndex(exits_, exitId);
+    if (idx < 0 || idx >= static_cast<int>(exits_.size())) {
         return 0;
     }
-    return it->floorId;
+    return exits_[static_cast<size_t>(idx)].floorId;
 }
 
 const Connector* RVOSimulator::selectConnectorForAgent(const Agent& agent) const {
@@ -1064,4 +1105,3 @@ bool RVOSimulator::writeRawSimulationJson(const std::string& outputDir) const {
 }
 
 } // namespace rvocpp
-

@@ -12,7 +12,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.*;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
@@ -27,7 +29,7 @@ public class SourceController {
     @GetMapping("/source/{projectId}/{filename:.+}")
     public ResponseEntity<Resource> getSourceFile(@PathVariable String projectId, @PathVariable String filename)
             throws IOException {
-        Path fileOnDisk = Paths.get(projectBase, "rvo", "source", projectId, filename);
+        Path fileOnDisk = Paths.get(projectBase, projectId, filename);
         Resource res;
         if (Files.exists(fileOnDisk) && Files.isReadable(fileOnDisk)) {
             res = new UrlResource(fileOnDisk.toUri());
@@ -57,7 +59,7 @@ public class SourceController {
     // 创建项目目录（保证位置为 {projectBase}/rvo/source/{projectId}），如模板存在则拷贝模板
     @PostMapping("/project/create")
     public ResponseEntity<Map<String, String>> createProject(@RequestParam String projectId) {
-        Path target = Paths.get(projectBase, "rvo", "source", projectId);
+        Path target = Paths.get(projectBase, projectId);
         Map<String, String> ret = new HashMap<>();
         try {
             if (!Files.exists(target)) {
@@ -82,7 +84,7 @@ public class SourceController {
             }
 
             // 拷贝模板（如果需要），例：source/59
-            Path template = Paths.get(projectBase, "rvo", "source", "59");
+            Path template = Paths.get(projectBase, "59");
             if (Files.exists(template) && Files.isDirectory(template)) {
                 copyTemplate(template, target);
             }
@@ -101,7 +103,7 @@ public class SourceController {
     @PostMapping("/project/fixLocation")
     public ResponseEntity<Map<String, String>> fixProjectLocation(@RequestParam String projectId) {
         Map<String, String> ret = new HashMap<>();
-        Path target = Paths.get(projectBase, "rvo", "source", projectId);
+        Path target = Paths.get(projectBase, projectId);
         Path misplaced = Paths.get(projectBase, projectId);
         try {
             if (!Files.exists(target))
@@ -121,6 +123,25 @@ public class SourceController {
             ret.put("msg", e.getMessage());
             return ResponseEntity.status(500).body(ret);
         }
+    }
+
+    // 新增：获取项目下所有已模拟方案的名称（目录名）
+    @GetMapping("/project/listMethods/{projectId}")
+    public ResponseEntity<List<String>> listMethods(@PathVariable String projectId) {
+        Path projectDir = Paths.get(projectBase, projectId);
+        List<String> methods = new ArrayList<>();
+        if (Files.exists(projectDir) && Files.isDirectory(projectDir)) {
+            try (Stream<Path> stream = Files.walk(projectDir, 2)) {
+                stream.filter(Files::isDirectory)
+                        .filter(p -> Files.exists(p.resolve("output.json")) || Files.exists(p.resolve("result.rvo")))
+                        .map(p -> projectDir.relativize(p).toString().replace("\\", "/"))
+                        .filter(name -> !name.isEmpty())
+                        .forEach(methods::add);
+            } catch (IOException e) {
+                return ResponseEntity.status(500).build();
+            }
+        }
+        return ResponseEntity.ok(methods);
     }
 
     // 工具：把 srcDir 下内容移动到 destDir（存在同名文件则覆盖）
@@ -166,7 +187,7 @@ public class SourceController {
             if (i >= 0)
                 ext = original.substring(i).toLowerCase(); // .jpg/.png
 
-            Path targetDir = Paths.get(projectBase, "rvo", "source", projectId);
+            Path targetDir = Paths.get(projectBase, projectId);
             if (!Files.exists(targetDir))
                 Files.createDirectories(targetDir);
 
